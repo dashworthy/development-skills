@@ -29,6 +29,69 @@ Baseline branch, threshold, and lens selection are asked fresh every run. Verity
 that its removed config layer accounted for roughly 15 of ~34 defects found during its build;
 guardtower does not reintroduce that layer.
 
+## How a run flows
+
+Two entry points, one path. A local run infers its baseline from git; `/guardtower:pr` takes its
+diff scope from the forge instead. Everything after that is identical — there is no second code
+path for PR runs.
+
+```mermaid
+flowchart TD
+    START["Implementation finished:<br/>before a PR, a merge, or wrap-up"] --> P1
+    STARTPR["/guardtower:pr &lt;url or number&gt;"] --> PR1["Detect the forge from origin.<br/>Self-hosted or ambiguous: ask, never guess"]
+    PR1 --> PR2{"gh / glab present<br/>and authenticated?"}
+    PR2 -->|no| STOPCLI["Name the tool and how to fix it — stop.<br/>Never post a reduced set silently"]
+    PR2 -->|yes| PR3["Resolve the PR/MR and diff ITS head<br/>against ITS base, not the local branch"]
+
+    subgraph PRE ["Preflight — asked fresh each run, nothing persisted"]
+        P1["Establish the baseline branch<br/>confirmed with you, never guessed"] --> P2["Compute diff scope:<br/>changed paths only, never diff contents"]
+        P2 --> P3{"Anything changed?"}
+        P3 -->|no| STOPNONE["Nothing to review — stop"]
+        P3 -->|yes| P4["Snapshot the tree: numstat + untracked.<br/>Taken before the FIRST subagent, so the<br/>mapper is inside the check too"]
+        P4 --> P5["Map the repo via subagent:<br/>existing modules, stack, conventions"]
+        P5 --> P6["Agree the threshold — default 80 —<br/>and which lenses to run"]
+    end
+
+    PR3 --> P4
+
+    subgraph PASS ["The pass — one iteration, never repeated"]
+        BRIEF["Dispatch brief:<br/>baseline, changed paths, repo map"]
+        BRIEF --> L1["surveying-for-reuse"]
+        BRIEF --> L2["reviewing-for-security"]
+        BRIEF --> L3["detecting-code-smell"]
+        BRIEF --> L4["simplifying-through-abstraction"]
+        L1 --> STAGE
+        L2 --> STAGE
+        L3 --> STAGE
+        L4 --> STAGE
+        STAGE[("<b>.guardtower/findings/</b><br/>one JSON per lens.<br/>Analysts return ONLY a receipt —<br/>the conductor never sees a finding")]
+        STAGE --> ARB["Arbitrator is handed the paths<br/>and reads the files itself"]
+        ARB --> VER{"Does the cited evidence<br/>still hold in the source?"}
+        VER -->|no| DROPPED["Dropped with a reason.<br/>Never scored"]
+        VER -->|yes| SCORE["Score value and urgency 0-100.<br/>composite = 0.6 x value + 0.4 x urgency"]
+        SCORE --> GATE{"composite at or above<br/>the threshold?"}
+        GATE -->|no| DISCARD["Discarded"]
+        GATE -->|yes| PASSED["Returned to the conductor"]
+    end
+
+    P6 --> BRIEF
+
+    PASSED --> RECON{"Reconcile against the snapshot:<br/>anything touched outside .guardtower/ ?"}
+    RECON -->|violation| HALTR["HALT — surface the paths and their diff.<br/>Never auto-revert"]
+    RECON -->|clean| WRITEBRIEF["Conductor renders the brief<br/>from references/brief-template.md"]
+    WRITEBRIEF --> TRIAGE{"You triage each finding<br/>that cleared the gate"}
+    TRIAGE -->|out of scope| DEFERRED[("deferred/&lt;run&gt;.md<br/>write-only backlog.<br/>Never posted, never read by a later run")]
+    TRIAGE -->|in scope| APPROVED[("approved/&lt;run&gt;.md")]
+
+    APPROVED --> WASPR{"Was this a PR run?"}
+    WASPR -->|no| DONE["Report and stop"]
+    WASPR -->|yes| FORGE["Post ONE pending review, submitted once:<br/>inline where the line sits in a diff hunk,<br/>summary comment for everything else"]
+```
+
+The two HALT paths are unconditional. Reconciliation surfaces a violation and stops rather than
+reverting it, and the forge path stops rather than posting a quietly reduced set of comments.
+Nothing reaches a pull request that you have not marked in scope by hand.
+
 ## Injection
 
 `hooks/hooks.json` and `hooks/session-start.sh`, identical in shape to verity's: `SessionStart`,
@@ -119,20 +182,11 @@ it reads only their filenames — never their contents.
 
 ### The pass
 
-```
-conductor: changed paths + repo map → dispatch brief
-   ↓ one analyst per selected lens, in parallel
-     (superpowers:dispatching-parallel-agents)
-reuse · security · smell · abstraction
-   ↓ each writes .guardtower/findings/<run>-<lens>.json
-   ↓ each returns ONLY a receipt: "wrote N findings"
-arbitrator: reads those files, re-verifies each finding's evidence, scores, ranks
-   ↓ returns the passed items
-conductor: writes .guardtower/briefs/<run>.md from references/brief-template.md,
-           presents the passed findings; user triages in scope / out of scope
-   ↓
-.guardtower/approved/<run>.md   ·   .guardtower/deferred/<run>.md
-```
+One analyst per selected lens, dispatched in parallel per
+`superpowers:dispatching-parallel-agents`. Each reads the diff and whatever files it needs itself,
+writes its findings to `.guardtower/findings/<run>-<lens>.json`, and returns only a receipt. The
+arbitrator is then dispatched with those paths, reads them itself, verifies and scores, and
+returns the items that cleared the gate. See **How a run flows** above for the whole sequence.
 
 **The conductor owns every document under `.guardtower/` except the analysts' finding files.**
 The arbitrator returns its passed items and the conductor renders the brief, following verity's
@@ -145,9 +199,9 @@ reads analyst output" cannot be achieved by instruction alone. The mechanism:
 
 - Each analyst **writes its findings to `.guardtower/findings/<run>-<lens>.json`** and returns
   only a receipt naming the file and a count.
-- The arbitrator is dispatched with those four paths and reads them itself.
-- The conductor's context therefore grows by four short receipts plus one brief, independent of
-  diff size.
+- The arbitrator is dispatched with those paths and reads them itself.
+- The conductor's context therefore grows by one short receipt per lens plus one brief,
+  independent of diff size.
 
 The arbitrator's brief is the one subagent output the conductor is permitted to read, and reading
 it is required.
@@ -161,8 +215,11 @@ verity documents. Guardtower takes the same posture at lower cost:
   dispatching the first subagent of the run — the mapper**, not just before the analysts. The
   mapper is read-only by instruction and unguarded by anything else, exactly like an analyst; a
   snapshot taken after it runs would exempt it from the only check there is.
-- Re-measure after the analysts return. A path is **touched** when it is absent from the snapshot
-  or when its added/deleted counts differ from the snapshot's.
+- Re-measure **after the arbitrator returns** — the last subagent of the pass — not after the
+  analysts. One snapshot and one re-measurement then bracket every subagent the run dispatches:
+  mapper, analysts, arbitrator. Reconciling earlier would leave the arbitrator outside the only
+  check there is, which is the same flaw as snapshotting after the mapper. A path is **touched**
+  when it is absent from the snapshot or when its added/deleted counts differ from the snapshot's.
 - Resolve every touched path with `readlink -f` (or `cd "$(dirname …)" && pwd -P`) before
   comparing, so a symlink pointing out of the allowed area is caught by its existence.
 - Anything resolving outside `.guardtower/` **HALTS the run**: surface the offending paths and

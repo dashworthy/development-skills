@@ -405,8 +405,16 @@ check_skill posting-review-comments
 
 P="$PLUGIN/skills/posting-review-comments/SKILL.md"
 if [ -s "$P" ]; then
-  grep -q 'gh api' "$P";   check $? "poster: uses gh api for GitHub"
-  grep -q 'glab' "$P";     check $? "poster: uses glab for GitLab"
+  # The brief's literal checks here are `grep -q 'gh api'` and `grep -q 'glab'`. Both are bare
+  # substring searches of the kind the STANDING RULING rejects, and the gh one demonstrably leaks:
+  # deleting the whole gh api code example while leaving the descriptive sentence "GitHub, via
+  # `gh api` with a JSON body built in a heredoc" intact still passes it. It proves two words
+  # survive somewhere, not that the command the brief asked for is present. Anchored to the actual
+  # invocations instead.
+  grep_flat "$P" 'gh api "repos/$REPO/pulls/$PR/reviews"'
+  check $? "poster: uses gh api for GitHub"
+  grep_flat "$P" 'glab api "projects/:id/merge_requests/$MR/discussions"'
+  check $? "poster: uses glab for GitLab"
 
   # The brief's own literal check here is `grep -qi 'pending' "$P" || grep -qi 'single review'` —
   # and as written it carries a bug the plan already flagged: the second branch's grep has no file
@@ -488,7 +496,14 @@ for root in roots:
                     in_shell_fence = lang in shell_langs
                 continue
             if in_shell_fence:
-                if re.search(r'\bjq\b', line):
+                # Inside a shell fence every non-comment line is command text, so a bare `jq` word
+                # is an invocation. But a COMMENT inside a fence is prose - "# guardtower forbids
+                # jq" is exactly the naming-not-invoking case the whole check exists to permit, and
+                # flagging it would forbid documenting the rule in the one place it belongs. Strip
+                # from the first '#' before testing. A '#' inside a quoted argument truncates early,
+                # which can only make this more lenient, never a false positive.
+                code = line.split('#', 1)[0]
+                if re.search(r'\bjq\b', code):
                     hits.append(f"{f}: {line.strip()}")
             elif invoked_re.search(line):
                 hits.append(f"{f}: {line.strip()}")

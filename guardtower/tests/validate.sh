@@ -312,6 +312,33 @@ if [ -s "$M" ]; then
   check $? "smell: defers to the project's existing formatter/linter"
 fi
 
+# --- the abstraction analyst --------------------------------------------------
+
+check_skill simplifying-through-abstraction
+
+A="$PLUGIN/skills/simplifying-through-abstraction/SKILL.md"
+if [ -s "$A" ]; then
+  # The brief's own literal check here is `grep -q 'also_at'` — known-bad: that field name
+  # necessarily also appears in the Return format JSON schema below, regardless of whether the
+  # multi-file guidance survives, so an unanchored search would still pass with the entire
+  # "Multi-file findings" section deleted. Anchored instead to that section's own normative
+  # sentence, which appears nowhere else in the file. grep_flat because the sentence is long
+  # enough to wrap across two source lines at the file's normal prose width, and the check must
+  # hold regardless of exactly where that wrap falls.
+  grep_flat "$A" 'Put the clearest occurrence in `target_file`/`target_line` and every other in `also_at`.'
+  check $? "abstraction: uses also_at for multi-file findings"
+
+  # The brief's own literal check here is `grep -qi 'premature\|speculative'` — also known-bad,
+  # for the same class of reason as above: a bare case-insensitive word search is satisfied by
+  # any stray use of "speculative" anywhere in the file, so it is fragile by construction — it
+  # would pass unchanged if the defining-rule sentence below were reworded to drop the word while
+  # keeping the rule, and would equally pass if the word turned up in unrelated prose elsewhere
+  # while the rule itself went missing. Anchored instead to the defining-rule section's own
+  # sentence, so the check exercises the rule itself, not the presence of one word.
+  grep_flat "$A" 'An abstraction proposed for a case that has not happened yet is speculative, and speculative abstraction costs more than the duplication it prevents.'
+  check $? "abstraction: rules out speculative abstraction"
+fi
+
 printf '\n'
 if [ "$fail" -eq 0 ]; then printf 'PASS\n'; else printf 'FAILURES PRESENT\n'; fi
 exit "$fail"

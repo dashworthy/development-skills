@@ -64,8 +64,8 @@ pull number, GitLab a merge request iid); `$HEAD_SHA` and `$BASE_SHA` are `head_
 GitHub, via `gh api` with a JSON body built in a heredoc — one call, one pending review, submitted
 as `COMMENT` so it posts immediately without requiring a separate approve/request-changes step.
 **The heredoc delimiter is unquoted (`<<JSON`, not `<<'JSON'`) on purpose:** a quoted delimiter
-suppresses every expansion inside the body, so `$HEAD_SHA` would post to the pull request as the
-four literal characters `$HEA…` rather than the sha, and the review would attach to nothing.
+suppresses every expansion inside the body, so `$HEAD_SHA` would post to the pull request as that
+literal nine-character string rather than the sha, and the review would attach to nothing.
 
 ```sh
 gh api "repos/$REPO/pulls/$PR/reviews" \

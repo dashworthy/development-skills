@@ -471,6 +471,20 @@ import re, sys, pathlib
 
 roots = [pathlib.Path(p) for p in sys.argv[1:] if pathlib.Path(p).is_dir()]
 shell_langs = {"sh", "bash", "shell", "zsh"}
+
+def strip_shell_comment(line):
+    """Return `line` up to its first UNQUOTED '#'. Quote state is tracked so a '#' inside a
+    single- or double-quoted string is not mistaken for a comment start."""
+    sq = dq = False
+    for i, ch in enumerate(line):
+        if ch == "'" and not dq:
+            sq = not sq
+        elif ch == '"' and not sq:
+            dq = not dq
+        elif ch == '#' and not sq and not dq:
+            return line[:i]
+    return line
+
 # Two independent signals of an actual invocation, because either alone leaks:
 #   1. jq at a command position - line start, or after a pipe, semicolon, && or backtick.
 #   2. jq followed by something that can only be an argument - a flag, a filter starting
@@ -499,11 +513,13 @@ for root in roots:
                 # Inside a shell fence every non-comment line is command text, so a bare `jq` word
                 # is an invocation. But a COMMENT inside a fence is prose - "# guardtower forbids
                 # jq" is exactly the naming-not-invoking case the whole check exists to permit, and
-                # flagging it would forbid documenting the rule in the one place it belongs. Strip
-                # from the first '#' before testing. A '#' inside a quoted argument truncates early,
-                # which can only make this more lenient, never a false positive.
-                code = line.split('#', 1)[0]
-                if re.search(r'\bjq\b', code):
+                # flagging it would forbid documenting the rule in the one place it belongs.
+                #
+                # Strip the comment, but find its start QUOTE-AWARE. A naive line.split('#')[0]
+                # truncates at a '#' inside a quoted argument, and a real invocation after one then
+                # goes unseen - `curl "http://x/y#frag" | jq .z` is an everyday shell line, not an
+                # adversarial one, and it slipped through an earlier version of this check.
+                if re.search(r'\bjq\b', strip_shell_comment(line)):
                     hits.append(f"{f}: {line.strip()}")
             elif invoked_re.search(line):
                 hits.append(f"{f}: {line.strip()}")

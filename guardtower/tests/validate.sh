@@ -59,30 +59,39 @@ for ref in finding-schema scoring-rubric; do
   [ -s "$CONDUCTOR/references/$ref.md" ]; check $? "reference $ref.md exists"
 done
 
-# The finding contract must name every field the arbitrator relies on.
+# The finding contract must name every field the arbitrator relies on. Each field is anchored
+# to the start of its OWN table row (`| \`field\` |`), not a bare substring search — an
+# unanchored search is satisfied by, e.g., "evidence" or "claim" appearing inside the
+# existing_evidence row's Meaning column, or "tier" inside adoption_cost's Required column, so it
+# would not catch that field's own row being deleted.
 if [ -s "$CONDUCTOR/references/finding-schema.md" ]; then
   miss=""
   for field in lens target_file target_line evidence claim rationale proposal \
                in_diff also_at kind tier existing_solution existing_evidence adoption_cost; do
-    grep -q "$field" "$CONDUCTOR/references/finding-schema.md" || miss="$miss $field"
+    grep -q '^| `'"$field"'` |' "$CONDUCTOR/references/finding-schema.md" || miss="$miss $field"
   done
   [ -z "$miss" ]; check $? "finding-schema.md documents every field (missing:$miss)"
 
-  # Fields the arbitrator owns must be explicitly excluded from analyst output.
-  grep -qi "arbitrator" "$CONDUCTOR/references/finding-schema.md"
+  # Fields the arbitrator owns must be explicitly excluded from analyst output. Anchored to the
+  # exclusion sentence itself, not a bare "arbitrator" search — that word appears 10 other times
+  # in this file (the field table alone says "assigned by the arbitrator" four times), so it
+  # would still pass with the "What the arbitrator owns" section deleted entirely.
+  grep -qF 'never set by an analyst' "$CONDUCTOR/references/finding-schema.md"
   check $? "finding-schema.md states which fields the arbitrator assigns"
 fi
 
-# The rubric must carry the composite formula, the gate, and the migration anchor.
+# The rubric must carry the composite formula, the gate, and the migration anchor. Each is
+# anchored to its own specific line/phrase, not a bare substring search — see the FAIL evidence
+# in the fix report for why "80" and "migration" alone are satisfied by unrelated text elsewhere
+# in this file even after the line they're meant to test is deleted.
 if [ -s "$CONDUCTOR/references/scoring-rubric.md" ]; then
-  grep -q "0.6" "$CONDUCTOR/references/scoring-rubric.md" &&
-  grep -q "0.4" "$CONDUCTOR/references/scoring-rubric.md"
+  grep -qF '0.6 × value + 0.4 × urgency' "$CONDUCTOR/references/scoring-rubric.md"
   check $? "scoring-rubric.md carries the composite weights"
 
-  grep -q "80" "$CONDUCTOR/references/scoring-rubric.md"
+  grep -qF 'Default gate: **80**' "$CONDUCTOR/references/scoring-rubric.md"
   check $? "scoring-rubric.md carries the default gate"
 
-  grep -qi "migration" "$CONDUCTOR/references/scoring-rubric.md"
+  grep -qF 'Anchor — a merged duplicate is a migration' "$CONDUCTOR/references/scoring-rubric.md"
   check $? "scoring-rubric.md carries the merged-duplicate urgency anchor"
 fi
 

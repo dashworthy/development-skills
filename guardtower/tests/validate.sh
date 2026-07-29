@@ -531,6 +531,32 @@ sys.exit(0)
 PY
 check $? "no skill shells out to jq"
 
+# --- command ----------------------------------------------------------------
+
+CMD="$PLUGIN/commands/review.md"
+[ -s "$CMD" ]; check $? "commands/review.md exists"
+
+if [ -s "$CMD" ]; then
+  head -1 "$CMD" | grep -q '^---$'
+  check $? "command: frontmatter opens on line 1"
+  grep -q '^description: ' "$CMD"
+  check $? "command: frontmatter has a description"
+
+  # The brief's own literal check here is `grep -q 'reviewing-a-pull-request'` — a bare substring
+  # search of the whole file, the shape the STANDING RULING rejects: the skill name is exactly the
+  # kind of string that could survive in a stray comment or cross-reference with the actual
+  # dispatch instruction deleted. Anchored instead to the command's own dispatch sentence, which
+  # appears nowhere else in the file. grep_flat so the anchor survives a future prose rewrap.
+  grep_flat "$CMD" 'Otherwise invoke the `reviewing-a-pull-request` skill with that reference and follow it exactly.'
+  check $? "command: invokes the conductor skill"
+fi
+
+# --- the expected skill set, exactly ---------------------------------------
+
+expected="arbitrating-findings detecting-code-smell posting-review-comments reviewing-a-pull-request reviewing-for-security simplifying-through-abstraction surveying-for-reuse"
+actual=$(ls "$PLUGIN/skills" | sort | tr '\n' ' ' | sed 's/ $//')
+[ "$actual" = "$expected" ]; check $? "skill set is exactly the seven planned skills"
+
 printf '\n'
 if [ "$fail" -eq 0 ]; then printf 'PASS\n'; else printf 'FAILURES PRESENT\n'; fi
 exit "$fail"

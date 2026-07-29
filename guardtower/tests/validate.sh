@@ -11,6 +11,14 @@ ok()   { printf 'ok   - %s\n' "$1"; }
 bad()  { printf 'FAIL - %s\n' "$1"; fail=1; }
 check(){ if [ "$1" -eq 0 ]; then ok "$2"; else bad "$2"; fi }
 
+# Match a prose anchor regardless of how the source is line-wrapped. Prose in these documents is
+# wrapped for readability; a check that depends on where the wrap falls breaks on a purely
+# cosmetic reflow. Flattens newlines to spaces and collapses runs of whitespace before the literal
+# substring search, so a sentence spanning two wrapped lines still matches as one phrase.
+grep_flat() {  # grep_flat <file> <literal phrase>
+  tr '\n' ' ' < "$1" | tr -s ' ' | grep -qF "$2"
+}
+
 # --- manifest ---------------------------------------------------------------
 
 [ -f "$PLUGIN/.claude-plugin/plugin.json" ]; check $? "plugin.json exists"
@@ -263,14 +271,18 @@ if [ -s "$S" ]; then
   # never the bare word "exploitable", so the literal brief grep would not even pass against
   # correctly-written prose; and even loosened to match, a bare word search would still be
   # satisfied by an unrelated stray use of the word with this exact rule sentence deleted.
-  grep -qF 'A finding you cannot write an exploitation path for is not a finding.' "$S"
+  # grep_flat rather than a plain grep -qF: the anchor must survive prose being re-wrapped, since
+  # nothing about the sentence's meaning depends on which column the source happens to break at.
+  grep_flat "$S" 'A finding you cannot write an exploitation path for is not a finding.'
   check $? "security: requires a stated exploitation path"
 
   # Anchored to the skill's own worked-example sentence, not a bare case-insensitive 'theoretical'
   # search. The section heading itself ("Theoretical findings are out of scope") already contains
   # the bare word, so an unanchored search would still pass with the substantive rule sentence
-  # beneath that heading deleted and only the heading left standing.
-  grep -qF 'is not a finding unless you can name the path by which untrusted input reaches it' "$S"
+  # beneath that heading deleted and only the heading left standing. grep_flat for the same reason
+  # as above — this sentence is long enough that it wraps across two source lines in the file's
+  # normal prose width, and the check must hold regardless of exactly where that wrap falls.
+  grep_flat "$S" 'is not a finding unless you can name the path by which untrusted input reaches it'
   check $? "security: rules out theoretical findings"
 fi
 

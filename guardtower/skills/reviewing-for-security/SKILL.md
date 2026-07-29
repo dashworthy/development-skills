@@ -95,7 +95,8 @@ contributes no finding; move to the next one rather than manufacturing one to fi
 
 ## Theoretical findings are out of scope
 
-Say plainly: *"this could be dangerous if reached from untrusted input"* is not a finding unless you can name the path by which untrusted input reaches it. If you cannot trace it, do not emit it.
+Say plainly: *"this could be dangerous if reached from untrusted input"* is not a finding unless
+you can name the path by which untrusted input reaches it. If you cannot trace it, do not emit it.
 
 A dangerous-looking pattern is not, by itself, evidence of anything — string concatenation into a
 query, a permissive regex, an eval-like call. The finding starts only where you can trace a
@@ -156,4 +157,5 @@ finding's content actually lands.
 - Flagging a pattern without reading whether the surrounding code already mitigates it.
 - Reporting a dependency CVE without confirming the vulnerable code path is reachable.
 - Writing any file other than `output_path`.
+- Emitting `id`, `value`, `urgency`, or `composite` — those are the arbitrator's.
 - Returning findings instead of a receipt.

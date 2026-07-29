@@ -95,6 +95,75 @@ if [ -s "$CONDUCTOR/references/scoring-rubric.md" ]; then
   check $? "scoring-rubric.md carries the merged-duplicate urgency anchor"
 fi
 
+# --- skills: frontmatter, naming, and cross-references -----------------------
+
+check_skill() {
+  d="$PLUGIN/skills/$1"
+  f="$d/SKILL.md"
+
+  [ -s "$f" ]; check $? "skill $1: SKILL.md exists"
+  [ -s "$f" ] || return 0
+
+  # Frontmatter must open on line 1 and carry exactly name + description.
+  head -1 "$f" | grep -q '^---$'; check $? "skill $1: frontmatter opens on line 1"
+
+  fm=$(awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f{print}' "$f")
+
+  n=$(printf '%s\n' "$fm" | sed -n 's/^name: *//p' | head -1)
+  [ "$n" = "$1" ]; check $? "skill $1: frontmatter name matches directory (got '$n')"
+
+  printf '%s\n' "$fm" | grep -q '^description: '
+  check $? "skill $1: frontmatter has a description"
+
+  keys=$(printf '%s\n' "$fm" | sed -n 's/^\([a-z_]*\): .*/\1/p' | sort -u | tr '\n' ' ')
+  [ "$keys" = "description name " ]; check $? "skill $1: frontmatter has only name+description (got '$keys')"
+
+  # Every references/*.md the skill mentions must exist.
+  missing=""
+  for r in $(grep -o 'references/[a-z0-9-]*\.md' "$f" | sort -u); do
+    [ -f "$d/$r" ] || missing="$missing $r"
+  done
+  [ -z "$missing" ]; check $? "skill $1: all referenced files exist (missing:$missing)"
+
+  # House style: every skill ends with a "Red flags — STOP" section. Anchored to the heading
+  # itself (line start, level-2, exact phrase) rather than a bare "Red flags" substring search —
+  # the phrase could otherwise be satisfied by a stray mention in body prose with the actual
+  # section deleted.
+  grep -q '^## Red flags — STOP' "$f"; check $? "skill $1: has a 'Red flags — STOP' section"
+}
+
+check_skill reviewing-a-pull-request
+
+# $CONDUCTOR was defined by Task 2's block, which runs above this one.
+for ref in mapping-the-repo brief-template; do
+  [ -s "$CONDUCTOR/references/$ref.md" ]; check $? "reference $ref.md exists"
+done
+
+# The conductor must carry the invariants that make the design hold. Each check is anchored to
+# the concrete, load-bearing artifact the invariant produces — an exact command or a distinctive
+# sentence — rather than a single common word ("worktree", "receipt") that section headers and
+# ordinary prose could satisfy coincidentally in a document this size.
+C="$CONDUCTOR/SKILL.md"
+if [ -s "$C" ]; then
+  grep -qF 'git worktree add --detach' "$C"
+  check $? "conductor: uses a worktree"
+
+  grep -qF 'git diff --numstat HEAD' "$C"
+  check $? "conductor: snapshots with numstat"
+
+  grep -qi 'never auto-revert' "$C"
+  check $? "conductor: forbids auto-revert"
+
+  grep -qF "tr -dc 'a-z0-9' < /dev/urandom" "$C"
+  check $? "conductor: run id uses /dev/urandom"
+
+  grep -qF 'the firewall has already failed' "$C"
+  check $? "conductor: analysts return receipts only"
+
+  grep -q '\.guardtower/' "$C"
+  check $? "conductor: names the artifact root"
+fi
+
 printf '\n'
 if [ "$fail" -eq 0 ]; then printf 'PASS\n'; else printf 'FAILURES PRESENT\n'; fi
 exit "$fail"

@@ -1,4 +1,4 @@
-# dashworthy
+# Dashworthy Development Skills
 
 A Claude Code **plugin marketplace** — a growing collection of independently-installable plugins, published from this one repo.
 

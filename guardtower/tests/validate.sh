@@ -49,6 +49,43 @@ check $? "marketplace.json lists guardtower"
 
 [ -s "$PLUGIN/README.md" ]; check $? "README.md exists and is non-empty"
 
+# --- shared references ------------------------------------------------------
+
+# Defined here because this is the first appended block that needs it; later
+# blocks reuse it rather than redefining it.
+CONDUCTOR="$PLUGIN/skills/reviewing-a-pull-request"
+
+for ref in finding-schema scoring-rubric; do
+  [ -s "$CONDUCTOR/references/$ref.md" ]; check $? "reference $ref.md exists"
+done
+
+# The finding contract must name every field the arbitrator relies on.
+if [ -s "$CONDUCTOR/references/finding-schema.md" ]; then
+  miss=""
+  for field in lens target_file target_line evidence claim rationale proposal \
+               in_diff also_at kind tier existing_solution existing_evidence adoption_cost; do
+    grep -q "$field" "$CONDUCTOR/references/finding-schema.md" || miss="$miss $field"
+  done
+  [ -z "$miss" ]; check $? "finding-schema.md documents every field (missing:$miss)"
+
+  # Fields the arbitrator owns must be explicitly excluded from analyst output.
+  grep -qi "arbitrator" "$CONDUCTOR/references/finding-schema.md"
+  check $? "finding-schema.md states which fields the arbitrator assigns"
+fi
+
+# The rubric must carry the composite formula, the gate, and the migration anchor.
+if [ -s "$CONDUCTOR/references/scoring-rubric.md" ]; then
+  grep -q "0.6" "$CONDUCTOR/references/scoring-rubric.md" &&
+  grep -q "0.4" "$CONDUCTOR/references/scoring-rubric.md"
+  check $? "scoring-rubric.md carries the composite weights"
+
+  grep -q "80" "$CONDUCTOR/references/scoring-rubric.md"
+  check $? "scoring-rubric.md carries the default gate"
+
+  grep -qi "migration" "$CONDUCTOR/references/scoring-rubric.md"
+  check $? "scoring-rubric.md carries the merged-duplicate urgency anchor"
+fi
+
 printf '\n'
 if [ "$fail" -eq 0 ]; then printf 'PASS\n'; else printf 'FAILURES PRESENT\n'; fi
 exit "$fail"

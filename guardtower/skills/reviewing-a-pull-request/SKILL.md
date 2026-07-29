@@ -33,9 +33,11 @@ of those in this context is exactly what the context firewall exists to prevent.
 needs to read a diff, a source file, or a finding is dispatched to a subagent, and that subagent
 returns a verdict, a count, or a receipt — never the raw text.
 
-The **one exception**: the arbitrator's return — the items that cleared the gate, with their
-scores and rationale — is the single permitted read, and reading it is required. Everything the
-conductor reports, and everything it renders into `brief.md`, comes from that one return value.
+The **one exception**: the arbitrator's return is the single permitted read, and reading it is
+required. It carries three things and nothing else — the items that cleared the gate, with their
+scores and rationale; the dropped list, with each item's one-line reason its evidence didn't hold;
+and the discarded entries, verified but scored below the threshold. Everything the conductor
+reports, and everything it renders into `brief.md`, comes from that one return value.
 
 Six named skills get dispatched over the course of a run: one of `surveying-for-reuse`,
 `reviewing-for-security`, `detecting-code-smell`, `simplifying-through-abstraction` per selected
@@ -55,7 +57,11 @@ branch:
 
 1. Fetch the head ref — `git fetch origin pull/<n>/head` on GitHub, `git fetch origin merge-requests/<n>/head`
    on GitLab. Both resolve fork-sourced changes.
-2. `git worktree add --detach <tempdir> <head-sha>` — a second checkout in a temp directory.
+2. `git worktree add --detach <tempdir> <head-sha>` — a second checkout in a temp directory
+   **outside the repository**, e.g. `<tempdir>=$(mktemp -d)`. Not just hygiene: a worktree left
+   inside the repo tree shows up as an untracked path at the Reconcile re-measure and HALTs a clean
+   run every time — even though it did no harm, the run stops anyway, because reconciliation cannot
+   tell a harmless worktree from a real violation by path alone. See **Reconcile**.
 3. Analysts and the mapper read **inside that worktree**. The `<base-sha>...<head-sha>` diff is
    computed there too.
 4. Remove the worktree at the end of the run, on every exit path including a halt — see
@@ -80,10 +86,12 @@ it. And reconciliation therefore only has to watch the **main** tree — see **R
 6. **Snapshot the main tree** — `git diff --numstat HEAD` and `git status --porcelain` — before
    dispatching the first subagent of the run, so the mapper is inside the check too.
 7. **Map the repo.** Dispatch one subagent with `references/mapping-the-repo.md` as its complete
-   brief, pointed at the worktree. It returns existing modules and utilities, stack, conventions,
-   and test locations — never a raw tree listing. The reuse analyst cannot answer "does this
-   already exist?" from the diff alone, and mapping once beats four analysts each re-scanning the
-   tree.
+   brief, together with its payload: `worktree` — the absolute path from step 5 — and `head_sha` —
+   from step 3. The document itself defines neither; it expects both handed to it and its own stop
+   list forbids mapping at any other commit, so dispatching it without this payload leaves it
+   nothing to read. It returns existing modules and utilities, stack, conventions, and test
+   locations — never a raw tree listing. The reuse analyst cannot answer "does this already exist?"
+   from the diff alone, and mapping once beats four analysts each re-scanning the tree.
 8. **Agree the gate.** Offer the default threshold of 80 and all four lenses; let the user
    override either. Persist neither. A lens the user drops is not dispatched, and is named in the
    final report, so a short brief is never mistaken for a clean one.
@@ -135,8 +143,12 @@ The conductor's context grows by one short receipt per lens, independent of PR s
 Once every dispatched analyst has returned its receipt, dispatch `arbitrating-findings` with the
 set of `output_path`s. It reads the finding files itself, verifies each one's evidence against the
 worktree at the head sha, scores and gates what holds per `references/scoring-rubric.md`, and
-returns only the items that cleared the threshold — the one return value **Context discipline**
-names as the permitted exception.
+returns exactly three things — the items that cleared the threshold, the dropped list with each
+item's one-line reason its evidence didn't hold, and the discarded entries that were verified but
+scored below the threshold — and nothing else. This is the one return value **Context discipline**
+names as the permitted exception. It is also the only source for `brief.md`'s summary counts and
+for **Reporting, always** below: the conductor cannot re-derive a dropped or discarded count from
+anywhere else without reading a finding file itself, which rule two forbids.
 
 ## Reconcile
 

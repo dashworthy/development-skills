@@ -115,7 +115,11 @@ check_skill() {
   printf '%s\n' "$fm" | grep -q '^description: '
   check $? "skill $1: frontmatter has a description"
 
-  keys=$(printf '%s\n' "$fm" | sed -n 's/^\([a-z_]*\): .*/\1/p' | sort -u | tr '\n' ' ')
+  # [a-zA-Z0-9_-] on purpose, not [a-z_]: a hyphenated key such as allowed-tools or
+  # argument-hint — exactly the extra frontmatter fields a Claude Code skill author reaches for —
+  # would otherwise not match the old narrower class at all, silently vanish from $keys, and let a
+  # three-key frontmatter pass this as if it carried only name+description.
+  keys=$(printf '%s\n' "$fm" | sed -n 's/^\([a-zA-Z0-9_-]*\): .*/\1/p' | sort -u | tr '\n' ' ')
   [ "$keys" = "description name " ]; check $? "skill $1: frontmatter has only name+description (got '$keys')"
 
   # Every references/*.md the skill mentions must exist.
@@ -140,9 +144,10 @@ for ref in mapping-the-repo brief-template; do
 done
 
 # The conductor must carry the invariants that make the design hold. Each check is anchored to
-# the concrete, load-bearing artifact the invariant produces — an exact command or a distinctive
-# sentence — rather than a single common word ("worktree", "receipt") that section headers and
-# ordinary prose could satisfy coincidentally in a document this size.
+# the concrete, load-bearing artifact the invariant produces — an exact command, an exact path, or
+# a distinctive sentence — rather than a single common word ("worktree", "receipt", ".guardtower/")
+# that section headers, JSON snippets, and ordinary prose could satisfy coincidentally in a
+# document this size, with the section the word actually names deleted entirely.
 C="$CONDUCTOR/SKILL.md"
 if [ -s "$C" ]; then
   grep -qF 'git worktree add --detach' "$C"
@@ -151,17 +156,44 @@ if [ -s "$C" ]; then
   grep -qF 'git diff --numstat HEAD' "$C"
   check $? "conductor: snapshots with numstat"
 
-  grep -qi 'never auto-revert' "$C"
+  # Anchored to the exact bolded sentence, not a bare case-insensitive "auto-revert" substring —
+  # the Red flags list separately says "Auto-reverting a reconciliation violation...", a different
+  # phrasing that would keep an unanchored search passing even with this sentence, and the whole
+  # rule it belongs to, deleted.
+  grep -qF '**Never auto-revert.**' "$C"
   check $? "conductor: forbids auto-revert"
 
-  grep -qF "tr -dc 'a-z0-9' < /dev/urandom" "$C"
-  check $? "conductor: run id uses /dev/urandom"
+  # The full one-liner, not just "/dev/urandom" — LC_ALL=C and | head -c 6 are both load-bearing
+  # (byte-safe character class, and the six-character minimum) and a shortened grep would still
+  # pass with either dropped from the actual command.
+  grep -qF "LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 6" "$C"
+  check $? "conductor: run id generation is the full urandom one-liner"
 
+  grep -qF '<YYYY-MM-DD>-<pr-number>-<suffix>' "$C"
+  check $? "conductor: run id format is specified"
+
+  # Two separate claims, honestly labeled: this one is the stated *consequence* of an analyst
+  # returning a finding instead of a receipt, not the receipt format itself — see the next check.
   grep -qF 'the firewall has already failed' "$C"
-  check $? "conductor: analysts return receipts only"
+  check $? "conductor: states the firewall-failure consequence of reading a finding"
 
-  grep -q '\.guardtower/' "$C"
-  check $? "conductor: names the artifact root"
+  # The actual receipt contract analysts return. Previously unchecked — this could have been
+  # deleted with nothing in the suite noticing.
+  grep -qF 'wrote <N> findings to <output_path>' "$C"
+  check $? "conductor: names the analyst receipt format"
+
+  # Three specific paths from the artifact layout, not a bare '\.guardtower/' substring search —
+  # that matched the JSON dispatch-brief line, a Red-flags bullet, and three other unrelated
+  # sentences, so the entire Disk layout could be deleted while any one surviving mention of the
+  # bare word ".guardtower/" kept a single check green.
+  grep -qF '.guardtower/<run>/findings/<lens>.json' "$C"
+  check $? "conductor: names the findings path in the artifact layout"
+
+  grep -qF '.guardtower/<run>/approved.md' "$C"
+  check $? "conductor: names approved.md in the artifact layout"
+
+  grep -qF '.guardtower/<run>/deferred.md' "$C"
+  check $? "conductor: names deferred.md in the artifact layout"
 fi
 
 printf '\n'

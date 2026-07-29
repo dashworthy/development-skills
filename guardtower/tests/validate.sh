@@ -286,6 +286,32 @@ if [ -s "$S" ]; then
   check $? "security: rules out theoretical findings"
 fi
 
+# --- the code smell analyst ---------------------------------------------------
+
+check_skill detecting-code-smell
+
+M="$PLUGIN/skills/detecting-code-smell/SKILL.md"
+if [ -s "$M" ]; then
+  # The brief's own literal check here is `grep -qi 'style'` — known-bad: "style" recurs in
+  # ordinary prose all over a document like this (the "Style is out of scope" heading, "quote
+  # style" in that same section's first sentence), so an unanchored search would still pass with
+  # the entire "smell is a predicted failure, not a preference" section deleted. Anchored instead
+  # to that section's own defining-rule sentence, which appears nowhere else in the file.
+  # grep_flat because the sentence is long enough to wrap across two source lines at the file's
+  # normal prose width, and the check must hold regardless of exactly where that wrap falls.
+  grep_flat "$M" 'If the only thing you can say is that you would have written it differently, it is not a finding.'
+  check $? "smell: separates smells from style preferences"
+
+  # The brief's own literal check here is `grep -qi 'formatter\|linter'` — also known-bad: both
+  # words recur standalone outside the "Style is out of scope" section (e.g. "What you receive"
+  # instructs reading repo_map for a configured linter or formatter, and the Red flags item names
+  # both again), so an unanchored search would still pass with the section's substantive deferral
+  # rule deleted and only those other, unrelated mentions left standing. Anchored instead to the
+  # section's own normative sentence naming both tools together.
+  grep_flat "$M" 'already enforced by a linter or formatter belong to that tool, not to guardtower'
+  check $? "smell: defers to the project's existing formatter/linter"
+fi
+
 printf '\n'
 if [ "$fail" -eq 0 ]; then printf 'PASS\n'; else printf 'FAILURES PRESENT\n'; fi
 exit "$fail"

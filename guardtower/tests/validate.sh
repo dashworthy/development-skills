@@ -252,6 +252,28 @@ if [ -s "$R" ]; then
   check $? "reuse: carries the concrete tier-2 counter-example"
 fi
 
+# --- the security analyst ----------------------------------------------------
+
+check_skill reviewing-for-security
+
+S="$PLUGIN/skills/reviewing-for-security/SKILL.md"
+if [ -s "$S" ]; then
+  # Anchored to the skill's own bolded rule sentence, not a bare case-insensitive 'exploitable'
+  # search. The skill states this rule using the brief's own vocabulary — "exploitation path" —
+  # never the bare word "exploitable", so the literal brief grep would not even pass against
+  # correctly-written prose; and even loosened to match, a bare word search would still be
+  # satisfied by an unrelated stray use of the word with this exact rule sentence deleted.
+  grep -qF 'A finding you cannot write an exploitation path for is not a finding.' "$S"
+  check $? "security: requires a stated exploitation path"
+
+  # Anchored to the skill's own worked-example sentence, not a bare case-insensitive 'theoretical'
+  # search. The section heading itself ("Theoretical findings are out of scope") already contains
+  # the bare word, so an unanchored search would still pass with the substantive rule sentence
+  # beneath that heading deleted and only the heading left standing.
+  grep -qF 'is not a finding unless you can name the path by which untrusted input reaches it' "$S"
+  check $? "security: rules out theoretical findings"
+fi
+
 printf '\n'
 if [ "$fail" -eq 0 ]; then printf 'PASS\n'; else printf 'FAILURES PRESENT\n'; fi
 exit "$fail"

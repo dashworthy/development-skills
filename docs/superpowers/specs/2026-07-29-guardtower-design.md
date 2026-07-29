@@ -56,7 +56,7 @@ flowchart TD
         L2 --> STAGE
         L3 --> STAGE
         L4 --> STAGE
-        STAGE[("<b>.guardtower/findings/</b><br/>one JSON per lens.<br/>Analysts return ONLY a receipt —<br/>the conductor never sees a finding")]
+        STAGE[("<b>.guardtower/&lt;run&gt;/findings/</b><br/>one JSON per lens.<br/>Analysts return ONLY a receipt —<br/>the conductor never sees a finding")]
         STAGE --> ARB["Arbitrator is handed the paths<br/>and reads the files itself"]
         ARB --> VER{"Does the cited evidence<br/>still hold at the head sha?"}
         VER -->|no| DROPPED["Dropped with a reason.<br/>Never scored"]
@@ -70,8 +70,8 @@ flowchart TD
     RECON -->|violation| HALTR["HALT — surface the paths and their diff.<br/>Never auto-revert"]
     RECON -->|clean| WRITEBRIEF["Conductor renders the brief<br/>from references/brief-template.md"]
     WRITEBRIEF --> TRIAGE{"You triage each finding<br/>that cleared the gate"}
-    TRIAGE -->|out of scope| DEFERRED[("deferred/&lt;run&gt;.md<br/>write-only backlog.<br/>Never posted, never read by a later run")]
-    TRIAGE -->|in scope| APPROVED[("approved/&lt;run&gt;.md")]
+    TRIAGE -->|out of scope| DEFERRED[("&lt;run&gt;/deferred.md<br/>write-only backlog.<br/>Never posted, never read by a later run")]
+    TRIAGE -->|in scope| APPROVED[("&lt;run&gt;/approved.md")]
     APPROVED --> FORGE["Post ONE pending review, submitted once:<br/>inline where the line sits in a diff hunk,<br/>summary comment for everything else"]
     FORGE --> CLEAN["Remove the temp worktree.<br/>Report what was posted, dropped and discarded"]
     HALTR --> CLEAN
@@ -152,15 +152,26 @@ the code and measures nothing, so a second iteration would re-derive identical f
    override either. Persist neither. A lens the user drops is not dispatched and is named in the
    final report, so a short brief is never mistaken for a clean one.
 
-**Run id.** `<YYYY-MM-DD>-pr<number>-<n>`, where `n` is the lowest integer not already used in
-`.guardtower/briefs/` for that date and PR. This is the one thing a run looks at prior artifacts
-for, and it reads only their filenames — never their contents.
+**Run id.** `<YYYY-MM-DD>-<pr-number>-<suffix>`, where `suffix` is a random lowercase
+alphanumeric string of at least six characters — `2026-07-29-482-k3f9qa`. Generate it from the
+system's entropy source, never from the model:
+
+```sh
+LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 6
+```
+
+If `.guardtower/<run>/` somehow already exists, regenerate rather than reusing or appending — that
+is a `stat`, not a read.
+
+**This removes the last exception to "a run never looks at prior artifacts."** The previous
+sequential scheme had to enumerate existing directories to pick the next integer; a random suffix
+needs no such lookup, so the rule now holds with no carve-out at all.
 
 ### The pass
 
 One analyst per selected lens, dispatched in parallel per
 `superpowers:dispatching-parallel-agents`. Each reads the diff and whatever files it needs from
-the worktree, writes its findings to `.guardtower/findings/<run>-<lens>.json`, and returns only a
+the worktree, writes its findings to `.guardtower/<run>/findings/<lens>.json`, and returns only a
 receipt. The arbitrator is then dispatched with those paths, reads them itself, verifies and
 scores, and returns the items that cleared the gate.
 
@@ -173,7 +184,7 @@ where subagents return results and the conductor owns the document.
 A subagent's return value lands in the caller's context by construction, so "the conductor never
 reads analyst output" cannot be achieved by instruction alone. The mechanism:
 
-- Each analyst **writes its findings to `.guardtower/findings/<run>-<lens>.json`** and returns
+- Each analyst **writes its findings to `.guardtower/<run>/findings/<lens>.json`** and returns
   only a receipt naming the file and a count.
 - The arbitrator is dispatched with those paths and reads them itself.
 - The conductor's context therefore grows by one short receipt per lens plus one brief,
@@ -225,12 +236,67 @@ dropped, not scored low.
 | `proposal` | yes | What to do instead. Prose, never a patch — guardtower does not modify code |
 | `in_diff` | yes | Whether `target_line` falls inside a diff hunk. Decides inline vs summary |
 | `also_at` | no | Further `file:line` locations for a finding spanning several files |
+| `kind` | reuse only | `reimplements`, `duplicates`, or `diverges` — see the reuse lens below |
+| `tier` | reuse only | `1` already reachable, `2` not yet installed |
+| `existing_solution` | reuse only | The thing that already does this: a repo path, a package plus the exact export, or a stdlib/platform API |
+| `existing_evidence` | reuse only | Source text or documented signature proving it covers the claim |
+| `adoption_cost` | tier 2 only | What adding this dependency costs: supply-chain surface, maintenance, version churn |
 | `value` | yes | 0–100, assigned by the arbitrator |
 | `urgency` | yes | 0–100, assigned by the arbitrator |
 | `composite` | yes | `round(0.6 × value + 0.4 × urgency)`, assigned by the arbitrator |
 
 Analysts set everything except `id`, `value`, `urgency`, and `composite`. Those are the
 arbitrator's.
+
+## The reuse lens — challenge the decision to build
+
+The other three lenses review code that exists. This one challenges whether it should exist at
+all, and it is deliberately the most aggressive of the four.
+
+**The mandatory question.** For every new file, module, class, exported function, or utility the
+PR introduces, the analyst must answer in writing: *what already does this?* A null answer is
+acceptable only with the search that produced it — which paths were scanned, which manifest
+entries were checked, which stdlib or platform APIs were considered. **Silence is not a null
+answer.** This is a burden the lens always carries, not a finding it sometimes emits.
+
+**Two tiers, deliberately asymmetric.**
+
+| Tier | What may be cited | Bar |
+|---|---|---|
+| 1 — already reachable | Code in this repo, packages already in the manifest, language stdlib and platform APIs, and any installed Claude Code skill | **Aggressive.** Reimplementing something the project can already reach is near-indefensible, and the finding says so plainly |
+| 2 — not yet installed | A third-party package that is not currently a dependency | **Qualified.** Only when well-established, and only with `adoption_cost` stated |
+
+The asymmetry is the whole point. Without it the lens degenerates into answering every thirty-line
+utility with "add a dependency" — trading a small maintenance cost for a permanent one, and
+burning the credibility of every other finding it makes. *Do not hand-roll JWT parsing when `jose`
+exists* is a legitimate tier 2 finding. *Import lodash for a three-line `groupBy`* is not.
+
+**Three kinds of finding**, strongest first:
+
+- **`reimplements`** — the PR builds a capability that already exists whole. The strongest claim
+  the lens can make.
+- **`duplicates`** — specific logic repeated from an existing local implementation.
+- **`diverges`** — solves a problem the repo already has an established mechanism for, in a
+  different way, leaving two patterns where there was one.
+
+**Evidence has two halves here.** The generic `evidence` field cites the new code. A reuse finding
+must *additionally* cite what it claims already exists — `existing_solution` and
+`existing_evidence` — and the arbitrator verifies both halves. A finding whose superseding
+solution cannot be confirmed to actually cover the requirement is dropped exactly like any other
+unverified claim. This closes the lens's characteristic failure: a confident "library X already
+does this" where library X does something adjacent.
+
+**Rationalizations, and what they're worth.** The analyst holds the line against these; they are
+arguments for triage, not reasons to withhold a finding.
+
+| Excuse | Reality |
+|---|---|
+| "The existing one doesn't quite fit" | Name the gap. If it's a missing parameter, extending it is smaller than a second implementation — and if you can't name it, it fits. |
+| "Ours is simpler" | Simpler today, before the edge cases the existing one already handles arrive. Simplicity measured on day one is not a property of the code. |
+| "It's only a few lines" | A few lines that must stay in sync with a few other lines forever. The cost is the divergence, not the length. |
+| "I didn't know it existed" | A finding about discoverability, not a justification. Both implementations still ship. |
+| "The dependency is heavy" | A real tier 2 objection, and irrelevant to tier 1 — that dependency is already installed. |
+| "Refactoring to use it is out of scope" | That is the triage decision, made by a human, *after* the finding exists. Not a reason to withhold it. |
 
 ## Scoring
 
@@ -256,6 +322,14 @@ and arbitrator work to it.
 | 40–69 | Same cost later as now |
 | 0–39 | Cheaper later, or may become moot |
 
+**Anchor — a merged duplicate is a migration.** A `reimplements` or `duplicates` finding sits at
+**70–89** on urgency, not 40–69. Once a duplicate capability merges, callers begin depending on it
+immediately, and removing it stops being an edit and becomes a migration. This anchor is stated
+explicitly because the alternative reading is the intuitive one and it quietly kills the lens:
+value 85 with urgency 60 composites to 75 and is discarded, so an aggressive reuse challenge that
+finds real duplication would produce nothing that ever clears the gate. With the correct reading,
+85 and 80 composite to 83 and pass.
+
 **Composite:** `round(0.6 × value + 0.4 × urgency)`. Default gate: **80**.
 
 **What 80 buys.** It requires `value 80 + urgency 80`, or `value 100 + urgency 50`. This is a
@@ -276,8 +350,8 @@ findings are reported as a count with one-line reasons, never scored.
 The conductor presents every finding that cleared the gate, with its scores and rationale, and the
 user marks each **in scope** or **out of scope**. Nothing is posted until that happens.
 
-- In scope → `.guardtower/approved/<run>.md`, then posted
-- Out of scope → `.guardtower/deferred/<run>.md`, never posted
+- In scope → `.guardtower/<run>/approved.md`, then posted
+- Out of scope → `.guardtower/<run>/deferred.md`, never posted
 
 Approved items are posted as **a single pending review, submitted once**, so reviewers get one
 notification rather than one per comment:
@@ -293,12 +367,22 @@ relocated to the summary rather than moving them silently.
 
 ## Disk
 
+Grouped by run, so one review is one directory — everything it produced sits together and an old
+run is deleted by removing one path.
+
 ```
 .guardtower/
-  findings/<run>-<lens>.json   analyst staging; read by the arbitrator, never across runs
-  briefs/<run>.md              what cleared the gate
-  approved/<run>.md            marked in scope, and posted
-  deferred/<run>.md            marked out of scope — write-only backlog
+  2026-07-29-482-k3f9qa/
+    findings/
+      reuse.json          analyst staging; read by the arbitrator, never across runs
+      security.json
+      smell.json
+      abstraction.json
+    brief.md              what cleared the gate
+    approved.md           marked in scope, and posted
+    deferred.md           marked out of scope — write-only backlog
+  2026-07-29-482-7bqm2x/  a second review of the same PR, same day
+    …
 ```
 
 Everything is **write-only across runs**. A later run never reads any of it; it re-derives from the

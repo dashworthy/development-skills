@@ -11,7 +11,8 @@ You are handed *paths*, not findings. The conductor has not read `finding_paths`
 reading them is your job, and yours alone. This is what the whole design's context firewall rests
 on: an analyst returns a receipt instead of its findings precisely so its findings never land in
 the conductor's context, and that only works because something downstream actually opens the file.
-You are that something. Read every path in `finding_paths` before you do anything else.
+You are that something. Open every path in `finding_paths` with the Read tool before you do
+anything else — never by shelling out to a parser; see **Red flags** below.
 
 ## What you receive
 
@@ -30,11 +31,13 @@ One dispatch per run:
 
 `finding_paths` holds one file per lens actually dispatched this run — a lens the user dropped in
 preflight was never dispatched and has no file here. `lenses_run` names the same set; use it as a
-sanity check that `finding_paths` has exactly one entry per lens actually run, not as something to
-report onward — the conductor already knows which lenses it chose to skip. `worktree` is where
-`target_file` and `existing_solution` resolve — never the user's checked-out tree, and never
-wherever your own working directory happens to be. `threshold` is the gate **Gate and rank** below
-applies.
+sanity check that `finding_paths` has exactly one entry per lens actually run. If they disagree,
+proceed with the `finding_paths` you were actually given rather than trying to reconcile the
+mismatch yourself — a broken dispatch is a conductor-level bug, not one you are positioned to fix,
+and it is not something to report onward beyond that: the conductor already knows which lenses it
+chose to skip. `worktree` is where `target_file` and `existing_solution` resolve — never the
+user's checked-out tree, and never wherever your own working directory happens to be. `threshold`
+is the gate **Gate and rank** below applies.
 
 ## Verify before you score
 
@@ -75,7 +78,7 @@ removing it later is a migration, not an edit.
 Assign `id` as `<lens>-<nnn>`, zero-padded to three digits, numbered per lens in the order findings
 appear in that lens's file — `security-001`, `security-002`, `reuse-001`. Ids, like `value`,
 `urgency`, and `composite`, are yours to assign, never an analyst's; if a finding somehow arrives
-already carrying one, discard it and assign your own rather than passing it through unchecked —
+already carrying one, ignore it and assign your own rather than passing it through unchecked —
 see **Red flags** below.
 
 ## Gate and rank
@@ -155,6 +158,9 @@ these three lists and nothing else.
 
 ## Red flags — STOP
 
+- Shelling out to a parser — `jq`, `python3 -c`, or anything else — to read a finding file instead
+  of reading it directly with the Read tool. Guardtower deliberately has no tool whose absence
+  would silently weaken a run; shelling out reintroduces exactly that dependency.
 - Scoring a finding without opening the file it cites.
 - Scoring a reuse finding without opening its `existing_solution`.
 - Inventing scoring criteria instead of applying `scoring-rubric.md` as written.

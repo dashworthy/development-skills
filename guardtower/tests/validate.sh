@@ -345,6 +345,14 @@ check_skill arbitrating-findings
 
 B="$PLUGIN/skills/arbitrating-findings/SKILL.md"
 if [ -s "$B" ]; then
+  # Task 8 review, Important #2: the original suite anchored only the *consequence* of the
+  # verification rule (below) and never the rule itself — deleting the whole "open target_file at
+  # target_line inside the worktree and compare it against evidence" instruction left the suite
+  # green, i.e. the arbitrator's entire reason for existing was deletable undetected. Anchored to
+  # the rule sentence itself, which appears nowhere else in the file.
+  grep_flat "$B" 'open `target_file` at `target_line` **inside the worktree** and compare it against `evidence`'
+  check $? "arbitrator: verifies cited evidence against the worktree before scoring"
+
   # The brief's own literal check here is `grep -qi 'drop'` — known-bad per the STANDING RULING:
   # "drop"/"dropped" recurs throughout a document whose whole subject is dropping findings (the
   # outcome name itself, the Red flags item, the return-format JSON's "dropped" key), so an
@@ -372,17 +380,23 @@ if [ -s "$B" ]; then
   # The brief's own literal check here is `grep -q 'existing_evidence'` — known-bad: that field
   # name necessarily also appears in finding-schema.md's own vocabulary and could appear in a
   # passing mention here regardless of whether the "second half of evidence" rule itself survives.
-  # Anchored instead to the sentence that states the rule.
-  grep_flat "$B" 'Also open `existing_solution` and confirm `existing_evidence` shows it genuinely covers the claim.'
-  check $? "arbitrator: verifies both halves of reuse evidence"
+  # Anchored to the sentence that states the rule, AND (Task 8 review, Minor #3) to the tier-2
+  # adoption_cost sentence right after it — the first check alone left that second rule deletable
+  # with the suite still green.
+  grep_flat "$B" 'Also open `existing_solution` and confirm `existing_evidence` shows it genuinely covers the claim.' \
+    && grep_flat "$B" 'For `tier: 2`, additionally require a non-empty `adoption_cost`; a tier 2 finding that omits it drops as well, because a dependency proposed with no stated cost is not a finding you can score.'
+  check $? "arbitrator: verifies both halves of reuse evidence, including the tier-2 adoption_cost requirement"
 
   # The brief's own literal check here is `grep -qi 'discarded' && grep -qi 'dropped'` —
   # known-bad, named explicitly in the STANDING RULING: both words are the outcome names used
   # throughout the whole document (return-format JSON, Three outcomes list, Red flags), so both
   # bare searches pass even with the sentence that actually distinguishes them deleted. Anchored
-  # instead to that distinguishing sentence itself.
-  grep_flat "$B" 'Returning a dropped finding as discarded would tell the user a fabricated claim was merely low-priority.'
-  check $? "arbitrator: keeps dropped and discarded distinct"
+  # to that distinguishing sentence itself, AND (Task 8 review, Minor #3) to the `dropped` bullet's
+  # negative-field-carriage line — the first check alone left the three-outcome bullet definitions
+  # themselves deletable with the suite still green.
+  grep_flat "$B" 'Returning a dropped finding as discarded would tell the user a fabricated claim was merely low-priority.' \
+    && grep_flat "$B" 'Carries `reason`, never `value`, `urgency`, or `composite`.'
+  check $? "arbitrator: keeps dropped and discarded distinct, including by field carriage"
 fi
 
 printf '\n'

@@ -1,6 +1,10 @@
 .signal/
 .DS_Store
 
+# Subagent-driven-development scratch: ledgers, briefs, review packages.
+# Per-plan working state, not source.
+.superpowers/
+
 # .claude/settings.json IS committed — it carries the deny rules that freeze
 # the two plugin directories, and it only helps if it travels with the repo.
 # settings.local.json stays personal: it holds machine-specific absolute paths.

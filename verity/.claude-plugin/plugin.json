@@ -1,0 +1,8 @@
+{
+  "name": "verity",
+  "description": "Diff-scoped test hardening: a skill that audits a branch diff for weakly-tested behaviour, writes tests and only tests, and verifies those tests actually assert what they claim - looping until thresholds are met or it runs out of road. Ecosystem-agnostic; asks for what it needs instead of reading a config file.",
+  "version": "0.1.0",
+  "author": { "name": "Andrew Leach", "email": "andrew@leachcreative.com" },
+  "license": "MIT",
+  "keywords": ["testing", "coverage", "mutation-testing", "test-quality", "diff-review", "superpowers"]
+}

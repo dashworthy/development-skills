@@ -1,0 +1,30 @@
+{
+  "name": "dashworthy",
+  "description": "dashworthy plugin marketplace",
+  "owner": {
+    "name": "Andrew Leach",
+    "email": "andrew@leachcreative.com"
+  },
+  "plugins": [
+    {
+      "name": "signal",
+      "description": "Discovery pipeline: interrogate requirements, then sequence them into a dependency-ordered brief for handoff.",
+      "version": "0.1.0",
+      "source": "./signal",
+      "author": {
+        "name": "Andrew Leach",
+        "email": "andrew@leachcreative.com"
+      }
+    },
+    {
+      "name": "verity",
+      "description": "Diff-scoped test hardening: audits a branch diff for weakly-tested behaviour, writes tests and only tests, and verifies those tests actually assert what they claim.",
+      "version": "0.1.0",
+      "source": "./verity",
+      "author": {
+        "name": "Andrew Leach",
+        "email": "andrew@leachcreative.com"
+      }
+    }
+  ]
+}

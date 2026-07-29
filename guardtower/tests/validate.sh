@@ -122,9 +122,15 @@ check_skill() {
   keys=$(printf '%s\n' "$fm" | sed -n 's/^\([a-zA-Z0-9_-]*\): .*/\1/p' | sort -u | tr '\n' ' ')
   [ "$keys" = "description name " ]; check $? "skill $1: frontmatter has only name+description (got '$keys')"
 
-  # Every references/*.md the skill mentions must exist.
+  # Every references/*.md the skill mentions must exist. The pattern also captures a leading
+  # chain of ../<dirname>/ components (extended regex, not the old bare 'references/...'), so a
+  # cross-skill citation like "../reviewing-a-pull-request/references/scoring-rubric.md" resolves
+  # against $d correctly instead of being truncated to "references/scoring-rubric.md" and checked
+  # against the wrong directory. `[ -f "$d/$r" ]` handles the embedded ".." itself — no realpath
+  # needed. Discovered by Task 4: an analyst skill legitimately cites a reference file that lives
+  # in the conductor's directory, not its own.
   missing=""
-  for r in $(grep -o 'references/[a-z0-9-]*\.md' "$f" | sort -u); do
+  for r in $(grep -Eo '(\.\./[a-z0-9-]+/)*references/[a-z0-9-]+\.md' "$f" | sort -u); do
     [ -f "$d/$r" ] || missing="$missing $r"
   done
   [ -z "$missing" ]; check $? "skill $1: all referenced files exist (missing:$missing)"
@@ -194,6 +200,56 @@ if [ -s "$C" ]; then
 
   grep -qF '.guardtower/<run>/deferred.md' "$C"
   check $? "conductor: names deferred.md in the artifact layout"
+fi
+
+# --- the reuse analyst -------------------------------------------------------
+
+check_skill surveying-for-reuse
+
+R="$PLUGIN/skills/surveying-for-reuse/SKILL.md"
+if [ -s "$R" ]; then
+  # Each finding kind is anchored to its own verbatim spec definition sentence, not the bare kind
+  # name — even backtick-quoted, the bare name is insufficient: "reimplements" and "duplicates"
+  # both recur backtick-quoted in the Scoring input section's urgency-anchor callout ("every
+  # `reimplements` or `duplicates` finding"), so a bare-name search (proven by mutation) still
+  # passes with the entire "Three kinds of finding" section deleted. Each definition's own
+  # sentence, by contrast, appears nowhere else in the file.
+  grep -qF 'the PR builds a capability that already exists whole' "$R"
+  check $? "reuse: names the 'reimplements' finding kind"
+  grep -qF 'specific logic repeated from an existing local implementation' "$R"
+  check $? "reuse: names the 'duplicates' finding kind"
+  grep -qF 'leaving two patterns where there was one' "$R"
+  check $? "reuse: names the 'diverges' finding kind"
+
+  # Anchored to the tier table's own row labels, not the bare phrases "tier 1"/"tier 2" — those
+  # also occur inside "tier 2 only" (the adoption_cost field's own description) and in the Red
+  # flags item about a tier-2 finding, so a bare search would still pass with the tier table
+  # itself deleted.
+  grep -qF '1 — already reachable' "$R" && grep -qF '2 — not yet installed' "$R"
+  check $? "reuse: defines both tiers"
+
+  # Anchored to the specific normative sentence, not a bare "adoption_cost" search — that field
+  # name necessarily also appears in the Return format JSON schema and in the Red flags list
+  # regardless of whether the tier-2 requirement is ever actually stated in prose.
+  grep -qF 'Set `adoption_cost` whenever `tier` is `2`' "$R"
+  check $? "reuse: requires adoption_cost for tier 2"
+
+  # Anchored to the sentence naming both evidence fields together, not a bare "existing_evidence"
+  # search — that field name also appears standalone in the Return format JSON schema.
+  grep -qF '`existing_solution` and `existing_evidence`' "$R"
+  check $? "reuse: requires the second half of evidence"
+
+  # Exact-cased, punctuated match on the spec's own bolded sentence — not case-insensitive on the
+  # bare phrase, which a much weaker sentence ("silence is not a substitute for looking") could
+  # also satisfy without carrying the spec's actual wording.
+  grep -qF 'Silence is not a null answer.' "$R"
+  check $? "reuse: silence is not a null answer"
+
+  # The distinctive half of the spec's own counter-example sentence — "lodash" alone would also
+  # match a stray mention in unrelated prose (e.g. an adoption_cost example), so this anchors to
+  # the actual worked example rather than the word appearing anywhere.
+  grep -qF 'Import lodash for a three-line' "$R"
+  check $? "reuse: carries the concrete tier-2 counter-example"
 fi
 
 printf '\n'

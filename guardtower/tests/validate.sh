@@ -399,6 +399,107 @@ if [ -s "$B" ]; then
   check $? "arbitrator: keeps dropped and discarded distinct, including by field carriage"
 fi
 
+# --- the forge poster ---------------------------------------------------------
+
+check_skill posting-review-comments
+
+P="$PLUGIN/skills/posting-review-comments/SKILL.md"
+if [ -s "$P" ]; then
+  grep -q 'gh api' "$P";   check $? "poster: uses gh api for GitHub"
+  grep -q 'glab' "$P";     check $? "poster: uses glab for GitLab"
+
+  # The brief's own literal check here is `grep -qi 'pending' "$P" || grep -qi 'single review'` —
+  # and as written it carries a bug the plan already flagged: the second branch's grep has no file
+  # argument, so on a $P that doesn't contain "pending" it reads from stdin instead of testing $P
+  # at all (hanging, or matching whatever happens to be on stdin). Beyond the bug, a bare
+  # case-insensitive word search is exactly the STANDING RULING's known-fragile shape: "pending" or
+  # "single review" could each survive as an unrelated stray mention with the actual one-review
+  # rule deleted. Anchored instead to the skill's own rule sentence, which appears nowhere else in
+  # the file. grep_flat because the sentence is long enough to wrap across two source lines at the
+  # file's normal prose width.
+  grep_flat "$P" 'so the reviewer gets one notification rather than one per comment'
+  check $? "poster: posts one review, not one comment per finding"
+
+  # The brief's own literal check here is `grep -q 'in_diff'` — known-bad: that field name
+  # necessarily also appears in the dispatch JSON (What you receive) and in the arbitrator's return
+  # shape this file cites, regardless of whether the routing rule itself survives. Anchored instead
+  # to the sentence that actually states the routing rule.
+  grep_flat "$P" '`in_diff: true` becomes an inline comment at `target_file`:`target_line`; `in_diff: false` becomes a line in the one summary comment.'
+  check $? "poster: routes on in_diff"
+
+  # The brief's own literal check here is `grep -qi 'never post'` — a bare case-insensitive
+  # substring the STANDING RULING calls out by name as too weak: those two words could survive in
+  # unrelated phrasing with the actual unconditional rule deleted. Anchored instead to the skill's
+  # own bolded rule sentence.
+  grep_flat "$P" 'Never post a finding the user did not approve.'
+  check $? "poster: refuses to post anything not approved"
+fi
+
+# The poster reads base_sha, run_id, lenses_run and lenses_skipped, none of which are in its
+# declared interface. The conductor must therefore name them at the dispatch site, or the poster is
+# told to consult fields it was never given - the same gap the mapper dispatch had. Anchored to the
+# sentence that makes the requirement explicit, not to the field names, which also appear in the
+# JSON block and would survive its deletion.
+grep_flat "$CONDUCTOR/SKILL.md" 'Name every field. `base_sha` is not optional decoration'
+check $? "conductor: names the poster payload, not just the approved set"
+
+# --- no skill or command shells out to jq -------------------------------------
+#
+# The brief's own literal check here is:
+#   ! grep -rqw jq "$PLUGIN/skills" "$PLUGIN/commands" 2>/dev/null
+# Run against the current tree this FAILS: two skills legitimately contain the word "jq" —
+# arbitrating-findings/SKILL.md's Red flags bullet forbidding a shell-out to jq, and
+# reviewing-a-pull-request/SKILL.md's aside comparing a missing jq to a missing gh/glab. Both are
+# correct and desirable prose; a plugin that may not even name the tool it forbids is absurd. A
+# bare `grep -w jq` cannot tell "names jq" from "invokes jq", so the literal check is rejected
+# outright rather than merely re-anchored. This checks for actual invocation instead: jq appearing
+# anywhere inside a fenced sh/bash/shell/zsh block, or jq preceded by a pipe, semicolon, `&&`, or
+# an opening backtick and followed by whitespace or a quoted argument — never a bare backtick-quoted
+# mention like `jq` on its own with nothing after it. Proven by mutation in the task report: a real
+# invocation added to a scratch fixture (piped, fenced, and inline-code forms) is caught; the two
+# real bare mentions in this tree are not.
+python3 - "$PLUGIN/skills" "$PLUGIN/commands" <<'PY'
+import re, sys, pathlib
+
+roots = [pathlib.Path(p) for p in sys.argv[1:] if pathlib.Path(p).is_dir()]
+shell_langs = {"sh", "bash", "shell", "zsh"}
+# Two independent signals of an actual invocation, because either alone leaks:
+#   1. jq at a command position - line start, or after a pipe, semicolon, && or backtick.
+#   2. jq followed by something that can only be an argument - a flag, a filter starting
+#      with '.', or a quote. This catches a mid-prose "run jq .x file.json" that signal 1
+#      misses, and was added after a positive-control mutation proved signal 1 alone let it
+#      through.
+# A bare backtick-quoted mention (`jq`) matches neither: the char after jq is a backtick,
+# which is not whitespace, a quote, or an argument opener. That exemption is what lets a
+# skill name the tool it forbids.
+invoked_re = re.compile(r'''(?:(?:^|[|;]|&&|`)\s*jq(?=[\s'"]|$))|(?:\bjq\s+(?:-[A-Za-z]|[.'"(]))''')
+
+hits = []
+for root in roots:
+    for f in sorted(root.rglob('*.md')):
+        in_shell_fence = False
+        for line in f.read_text().splitlines():
+            stripped = line.strip()
+            if stripped.startswith('```'):
+                if in_shell_fence:
+                    in_shell_fence = False
+                else:
+                    lang = stripped[3:].strip().lower()
+                    in_shell_fence = lang in shell_langs
+                continue
+            if in_shell_fence:
+                if re.search(r'\bjq\b', line):
+                    hits.append(f"{f}: {line.strip()}")
+            elif invoked_re.search(line):
+                hits.append(f"{f}: {line.strip()}")
+
+if hits:
+    sys.stderr.write("jq invocation(s) found:\n" + "\n".join(hits) + "\n")
+    sys.exit(1)
+sys.exit(0)
+PY
+check $? "no skill shells out to jq"
+
 printf '\n'
 if [ "$fail" -eq 0 ]; then printf 'PASS\n'; else printf 'FAILURES PRESENT\n'; fi
 exit "$fail"

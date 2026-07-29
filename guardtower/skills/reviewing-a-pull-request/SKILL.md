@@ -188,11 +188,33 @@ Nothing is posted before this step completes.
 
 ## Post
 
-Dispatch `posting-review-comments` with the approved set. This happens only because guardtower is
-a PR-only tool to begin with — there is no local-diff mode to post from by accident — and only
-after triage; nothing is dispatched until the user has marked every posted item in scope. It posts
-a single pending review, submitted once: an inline comment where `target_line` sits inside a diff
-hunk (`in_diff: true`), a line in the one summary comment otherwise.
+Dispatch `posting-review-comments` with this payload:
+
+```json
+{
+  "forge": "github | gitlab",
+  "pr_number": "<from the reference the user gave>",
+  "repo": "<owner/repo, or GitLab project id/path>",
+  "base_sha": "<from preflight step 3>",
+  "head_sha": "<from preflight step 3>",
+  "run_id": "<this run's id>",
+  "lenses_run": ["<lens>", "..."],
+  "lenses_skipped": ["<lens>", "..."],
+  "approved": ["<the in-scope subset of the arbitrator's passed array>"]
+}
+```
+
+Name every field. `base_sha` is not optional decoration: GitLab's discussion API needs it
+alongside `head_sha` to anchor a diff position, and `run_id`, `lenses_run` and `lenses_skipped` are
+what let the summary comment name the run and admit which lenses were skipped. A poster handed only
+the approved set is told by its own instructions to consult fields it was never given — the same
+gap the mapper dispatch had before preflight step 7 spelled its payload out.
+
+This happens only because guardtower is a PR-only tool to begin with — there is no local-diff mode
+to post from by accident — and only after triage; nothing is dispatched until the user has marked
+every posted item in scope. It posts a single pending review, submitted once: an inline comment
+where `target_line` sits inside a diff hunk (`in_diff: true`), a line in the one summary comment
+otherwise.
 
 ## Cleanup
 

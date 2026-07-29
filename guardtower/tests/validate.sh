@@ -339,6 +339,52 @@ if [ -s "$A" ]; then
   check $? "abstraction: rules out speculative abstraction"
 fi
 
+# --- the arbitrator -----------------------------------------------------------
+
+check_skill arbitrating-findings
+
+B="$PLUGIN/skills/arbitrating-findings/SKILL.md"
+if [ -s "$B" ]; then
+  # The brief's own literal check here is `grep -qi 'drop'` — known-bad per the STANDING RULING:
+  # "drop"/"dropped" recurs throughout a document whose whole subject is dropping findings (the
+  # outcome name itself, the Red flags item, the return-format JSON's "dropped" key), so an
+  # unanchored search would still pass with the entire "do not score it low" rule deleted.
+  # Anchored instead to that rule's own sentence, which appears nowhere else in the file.
+  # grep_flat because the sentence is long enough to wrap across two source lines at the file's
+  # normal prose width, and the check must hold regardless of exactly where that wrap falls.
+  grep_flat "$B" 'Do not score it low; dropping and low-scoring are different outcomes and the report distinguishes them.'
+  check $? "arbitrator: drops findings whose evidence fails, never scores it low"
+
+  # The brief's own literal check here is `grep -q 'composite'` — known-bad, called out
+  # explicitly in the STANDING RULING: `composite` is a field name that necessarily recurs in the
+  # return-format JSON and the Three outcomes / Gate and rank prose regardless of whether the
+  # arbitrator's own formula sentence survives. Anchored instead to the sentence that actually
+  # computes it.
+  grep_flat "$B" 'compute `composite` as `round(0.6 × value + 0.4 × urgency)`'
+  check $? "arbitrator: computes the composite per the rubric's formula"
+
+  # The brief's own literal check here is `grep -qi 'total order'` — weaker than it looks: the
+  # bare phrase could survive as a lone mention (e.g. a cross-reference aside) with the actual
+  # ranking rule it's meant to test deleted. Anchored instead to the full ranking sentence itself.
+  grep_flat "$B" 'Sort `passed` by the total order the rubric defines: `composite` descending, then `value` descending, then `target_file` ascending, then `id` ascending.'
+  check $? "arbitrator: ranks passed findings with the total order"
+
+  # The brief's own literal check here is `grep -q 'existing_evidence'` — known-bad: that field
+  # name necessarily also appears in finding-schema.md's own vocabulary and could appear in a
+  # passing mention here regardless of whether the "second half of evidence" rule itself survives.
+  # Anchored instead to the sentence that states the rule.
+  grep_flat "$B" 'Also open `existing_solution` and confirm `existing_evidence` shows it genuinely covers the claim.'
+  check $? "arbitrator: verifies both halves of reuse evidence"
+
+  # The brief's own literal check here is `grep -qi 'discarded' && grep -qi 'dropped'` —
+  # known-bad, named explicitly in the STANDING RULING: both words are the outcome names used
+  # throughout the whole document (return-format JSON, Three outcomes list, Red flags), so both
+  # bare searches pass even with the sentence that actually distinguishes them deleted. Anchored
+  # instead to that distinguishing sentence itself.
+  grep_flat "$B" 'Returning a dropped finding as discarded would tell the user a fabricated claim was merely low-priority.'
+  check $? "arbitrator: keeps dropped and discarded distinct"
+fi
+
 printf '\n'
 if [ "$fail" -eq 0 ]; then printf 'PASS\n'; else printf 'FAILURES PRESENT\n'; fi
 exit "$fail"

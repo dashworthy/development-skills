@@ -109,9 +109,9 @@ snapshots the main tree — `git diff --numstat HEAD` plus `git status --porcela
 dispatching the first subagent of the run (the repo mapper), and re-measures after the arbitrator
 returns, the last subagent of the pass. A path counts as touched when it's absent from the
 snapshot or its added/deleted counts differ from it. Anything that resolves outside
-`.guardtower/` halts the run and surfaces the offending paths and their diff to you — it does not
-revert them. Reverting is destructive and cannot distinguish a bug worth diagnosing from evidence
-you need intact.
+`.guardtower/` halts the run and surfaces the offending paths, plus what changed in them between
+the snapshot and the re-measure, to you — it does not revert them. Reverting is destructive and
+cannot distinguish a bug worth diagnosing from evidence you need intact.
 
 **The 80 gate is deliberately narrow.** Composite score is `round(0.6 × value + 0.4 × urgency)`,
 and clearing 80 requires `value 80 + urgency 80` or better. Most findings will not clear it, and

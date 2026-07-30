@@ -121,7 +121,7 @@ Return exactly this shape — never write it to a file, this is your return valu
       "in_diff": true,
       "also_at": ["<file:line>"],
       "kind": "<reuse lens only: reimplements | duplicates | diverges>",
-      "tier": "<reuse lens only: 1 | 2>",
+      "tier": 1,
       "existing_solution": "<reuse lens only>",
       "adoption_cost": "<reuse lens, tier 2 only>",
       "value": 92,

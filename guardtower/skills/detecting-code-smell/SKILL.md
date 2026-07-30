@@ -111,10 +111,10 @@ needs attention on gets lost in a backlog nobody asked for.
 
 ## Scoring input
 
-You do not score. `value`, `urgency`, and `composite` are the arbitrator's to assign, not yours —
-see **Red flags** below. But your `rationale` is the raw material the arbitrator scores against, so
-read `../reviewing-a-pull-request/references/scoring-rubric.md` before you write one, and write it
-in those terms: what breaks, for whom, how they find out.
+You do not score. `id`, `value`, `urgency`, and `composite` are the arbitrator's to assign, not
+yours — see **Red flags** below. But your `rationale` is the raw material the arbitrator scores
+against, so read `../reviewing-a-pull-request/references/scoring-rubric.md` before you write one,
+and write it in those terms: what breaks, for whom, how they find out.
 
 Note honestly that most smell findings score in the 40–69 value band — a genuine improvement with
 no concrete failure attached — and will not clear the default gate of 80, and that this is correct:

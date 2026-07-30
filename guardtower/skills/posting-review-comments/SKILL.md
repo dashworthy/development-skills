@@ -122,11 +122,19 @@ Every posted comment — inline or inside the summary — follows the same templ
 
 <proposal>
 
+Also at: <also_at, comma-joined>
+
 Existing solution: <existing_solution>
 Adoption cost: <adoption_cost>
 
 value <value> · urgency <urgency>
 ```
+
+The `Also at` line appears only when `also_at` is non-empty — omit the line entirely when the
+finding sits at a single location. Do not omit it when it *is* populated: an abstraction finding
+usually spans several files, and `target_file`/`target_line` names only the clearest of them, so a
+comment that drops `also_at` silently reports one occurrence of a problem the analyst found in
+five.
 
 The `Existing solution` line appears only for reuse findings; the `Adoption cost` line appears
 only for reuse findings at tier 2. Omit both for every other finding, and omit `Adoption cost`

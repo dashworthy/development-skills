@@ -16,8 +16,8 @@ This is the contract every analyst writes and the arbitrator reads.
 | `proposal` | yes | What to do instead. Prose, never a patch — guardtower does not modify code |
 | `in_diff` | yes | Whether `target_line` falls inside a diff hunk. Decides inline vs summary |
 | `also_at` | no | Further `file:line` locations for a finding spanning several files |
-| `kind` | reuse only | `reimplements`, `duplicates`, or `diverges` — see the reuse lens below |
-| `tier` | reuse only | `1` already reachable, `2` not yet installed |
+| `kind` | reuse only | `reimplements`, `duplicates`, or `diverges` — defined in `../../surveying-for-reuse/SKILL.md` |
+| `tier` | reuse only | A JSON number, never a string: `1` already reachable, `2` not yet installed |
 | `existing_solution` | reuse only | The thing that already does this: a repo path, a package plus the exact export, or a stdlib/platform API |
 | `existing_evidence` | reuse only | Source text or documented signature proving it covers the claim |
 | `adoption_cost` | tier 2 only | What adding this dependency costs: supply-chain surface, maintenance, version churn |
@@ -47,7 +47,7 @@ Write exactly this shape to your `findings/<lens>.json`:
       "also_at": ["<file:line>"],
 
       "kind": "<reuse lens only: reimplements | duplicates | diverges>",
-      "tier": "<reuse lens only: 1 | 2>",
+      "tier": 1,
       "existing_solution": "<reuse lens only>",
       "existing_evidence": "<reuse lens only>",
       "adoption_cost": "<reuse lens, tier 2 only>"
@@ -55,6 +55,12 @@ Write exactly this shape to your `findings/<lens>.json`:
   ]
 }
 ```
+
+`tier` is the one reuse-only field that is **a JSON number, not a string** — write `1` or `2`,
+never `"1"` or `"2"`. It is pinned because the arbitrator's tier-2 rule is a hard drop condition:
+a finding whose `tier` arrives as the string `"2"` and is compared against the number `2` fails
+that comparison, the adoption-cost requirement is never applied, and a tier 2 finding with no
+stated cost passes verification it should have been dropped by.
 
 ## What the arbitrator owns
 

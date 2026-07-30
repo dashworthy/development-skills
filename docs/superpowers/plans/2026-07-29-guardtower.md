@@ -238,7 +238,7 @@ Every analyst and the arbitrator depend on these two documents. They come first 
       "also_at": ["<file:line>"],
 
       "kind": "<reuse lens only: reimplements | duplicates | diverges>",
-      "tier": "<reuse lens only: 1 | 2>",
+      "tier": 1,
       "existing_solution": "<reuse lens only>",
       "existing_evidence": "<reuse lens only>",
       "adoption_cost": "<reuse lens, tier 2 only>"
@@ -446,7 +446,7 @@ Body sections, in order:
    - `git worktree add --detach <tempdir> <head-sha>`
    - `git diff --numstat HEAD` and `git status --porcelain`
 5. **Run id** — the format and the `/dev/urandom` one-liner, verbatim from spec §Preflight. Include the note that this removes the last exception to "a run never looks at prior artifacts", so a future editor does not reintroduce a directory scan.
-6. **The pass** — dispatch one analyst per selected lens in parallel per `superpowers:dispatching-parallel-agents`, each with the dispatch brief from this task's Interfaces block. State plainly: **an analyst returns a receipt; if you find yourself reading a finding, the firewall has already failed.**
+6. **The pass** — dispatch one analyst per selected lens in parallel per `superpowers:dispatching-parallel-agents`, each with the dispatch brief from this task's Interfaces block. State plainly: **an analyst returns a receipt; if you find yourself reading a finding, the firewall has already failed.** Then dispatch `arbitrating-findings` — with the **whole** payload Task 8 declares, not just the paths: `finding_paths`, `worktree`, `base_sha`, `head_sha`, `threshold` (the value agreed at preflight step 8), `lenses_run`. Spell every field's provenance out in prose the way **Post** does for the poster, and say what breaks without `threshold` (the user's gate is silently discarded and the arbitrator falls back to its own default) and without `worktree` (evidence is verified against the user's checked-out tree instead of the detached one).
 7. **Reconcile** — spec §Reconciliation verbatim in substance: snapshot before the *first* subagent (the mapper), re-measure after the *last* (the arbitrator), compare counts not status entries, resolve symlinks with `readlink -f`, halt on anything outside `.guardtower/`, never auto-revert. Include the reason counts beat `git status`: a porcelain entry reads ` M path` identically before and after a write.
 8. **Triage** — present every finding that cleared the gate with its scores and rationale; the user marks each in scope or out of scope; write `approved.md` and `deferred.md`. Nothing is posted before this.
 9. **Post** — dispatch `posting-review-comments` with the approved set. Only on an explicit PR run, only after triage.
@@ -759,7 +759,7 @@ git commit -m "feat(guardtower): abstraction analyst"
 - Modify: `guardtower/tests/validate.sh`
 
 **Interfaces:**
-- Consumes: the four `findings/<lens>.json` files by path; `finding-schema.md`; `scoring-rubric.md`.
+- Consumes: a dispatch payload of `finding_paths` (the `findings/<lens>.json` files by path, one per lens actually dispatched), `worktree`, `base_sha`, `head_sha`, `threshold`, and `lenses_run`; plus `finding-schema.md` and `scoring-rubric.md`. **The conductor must hand over all six** — `threshold` is the gate this skill applies (without it the value agreed at preflight step 8 is discarded and this skill falls back to its own default), and `worktree` is where `target_file` and `existing_solution` resolve (without it verification runs against the user's checked-out tree). Task 3's **The pass** is where that payload is written down.
 - Produces: to the conductor, the passed set plus counts —
 
 ```json

@@ -172,8 +172,19 @@ needs no such lookup, so the rule now holds with no carve-out at all.
 One analyst per selected lens, dispatched in parallel per
 `superpowers:dispatching-parallel-agents`. Each reads the diff and whatever files it needs from
 the worktree, writes its findings to `.guardtower/<run>/findings/<lens>.json`, and returns only a
-receipt. The arbitrator is then dispatched with those paths, reads them itself, verifies and
-scores, and returns the items that cleared the gate.
+receipt. The arbitrator is then dispatched with a payload naming `finding_paths` (one per lens
+actually dispatched), the `worktree`, `base_sha`, `head_sha`, the `threshold` agreed in preflight,
+and `lenses_run`. It reads the paths itself, verifies and scores, and returns the items that
+cleared the gate.
+
+**Paths alone are not the dispatch.** Two of those fields are load-bearing and neither can be
+re-derived downstream: without `threshold` the gate the user agreed in preflight step 8 is
+silently discarded and the arbitrator falls back to its own default, making that step decorative;
+without `worktree` the arbitrator resolves `target_file` and `existing_solution` against whatever
+tree it happens to be standing in — the user's own checkout — so evidence verification, the step
+this design rests on, can silently run against the wrong revision. Every skill's declared inputs
+are handed over in full at every dispatch site; a dispatch that names a subset is a bug even when
+nothing visibly breaks.
 
 **The conductor owns every document under `.guardtower/` except the analysts' finding files.** The
 arbitrator returns its passed items and the conductor renders the brief, following verity's split
@@ -186,7 +197,8 @@ reads analyst output" cannot be achieved by instruction alone. The mechanism:
 
 - Each analyst **writes its findings to `.guardtower/<run>/findings/<lens>.json`** and returns
   only a receipt naming the file and a count.
-- The arbitrator is dispatched with those paths and reads them itself.
+- The arbitrator is dispatched with those paths — inside the full payload named under **The pass**
+  above — and reads them itself.
 - The conductor's context therefore grows by one short receipt per lens plus one brief,
   independent of PR size.
 
@@ -237,7 +249,7 @@ dropped, not scored low.
 | `in_diff` | yes | Whether `target_line` falls inside a diff hunk. Decides inline vs summary |
 | `also_at` | no | Further `file:line` locations for a finding spanning several files |
 | `kind` | reuse only | `reimplements`, `duplicates`, or `diverges` — see the reuse lens below |
-| `tier` | reuse only | `1` already reachable, `2` not yet installed |
+| `tier` | reuse only | A JSON number, never a string: `1` already reachable, `2` not yet installed |
 | `existing_solution` | reuse only | The thing that already does this: a repo path, a package plus the exact export, or a stdlib/platform API |
 | `existing_evidence` | reuse only | Source text or documented signature proving it covers the claim |
 | `adoption_cost` | tier 2 only | What adding this dependency costs: supply-chain surface, maintenance, version churn |

@@ -15,8 +15,14 @@ check(){ if [ "$1" -eq 0 ]; then ok "$2"; else bad "$2"; fi }
 # wrapped for readability; a check that depends on where the wrap falls breaks on a purely
 # cosmetic reflow. Flattens newlines to spaces and collapses runs of whitespace before the literal
 # substring search, so a sentence spanning two wrapped lines still matches as one phrase.
+#
+# `--` before the pattern is load-bearing, not tidiness: without it grep parses an anchor that
+# begins with a hyphen — a markdown list item (`- **Also at:** …`) or a command-line flag
+# (`--input - <<JSON`) — as its own options and dies with a usage error instead of searching. That
+# is a FAILING check for a reason that has nothing to do with the document, and it hid two real
+# anchors until they were written.
 grep_flat() {  # grep_flat <file> <literal phrase>
-  tr '\n' ' ' < "$1" | tr -s ' ' | grep -qF "$2"
+  tr '\n' ' ' < "$1" | tr -s ' ' | grep -qF -- "$2"
 }
 
 # --- manifest ---------------------------------------------------------------
@@ -84,23 +90,54 @@ if [ -s "$CONDUCTOR/references/finding-schema.md" ]; then
   # exclusion sentence itself, not a bare "arbitrator" search — that word appears 10 other times
   # in this file (the field table alone says "assigned by the arbitrator" four times), so it
   # would still pass with the "What the arbitrator owns" section deleted entirely.
-  grep -qF 'never set by an analyst' "$CONDUCTOR/references/finding-schema.md"
+  grep_flat "$CONDUCTOR/references/finding-schema.md" 'never set by an analyst'
   check $? "finding-schema.md states which fields the arbitrator assigns"
+
+  # `tier` is a JSON number everywhere, never a string. Pinned because the arbitrator's tier-2
+  # adoption_cost requirement is a hard drop condition: a finding whose tier arrives as "2" and is
+  # compared against 2 fails that comparison, the requirement never fires, and a tier 2 finding
+  # with no stated cost passes a check written specifically to drop it. Anchored to the sentence
+  # that pins the type AND to the JSON example's own line, because either alone leaves the other
+  # free to drift back to a string.
+  grep_flat "$CONDUCTOR/references/finding-schema.md" '`tier` is the one reuse-only field that is **a JSON number, not a string**' \
+    && grep_flat "$CONDUCTOR/references/finding-schema.md" '"tier": 1,'
+  check $? "finding-schema.md pins tier to a JSON number"
 fi
 
 # The rubric must carry the composite formula, the gate, and the migration anchor. Each is
 # anchored to its own specific line/phrase, not a bare substring search — see the FAIL evidence
 # in the fix report for why "80" and "migration" alone are satisfied by unrelated text elsewhere
 # in this file even after the line they're meant to test is deleted.
-if [ -s "$CONDUCTOR/references/scoring-rubric.md" ]; then
-  grep -qF '0.6 × value + 0.4 × urgency' "$CONDUCTOR/references/scoring-rubric.md"
+RUBRIC="$CONDUCTOR/references/scoring-rubric.md"
+if [ -s "$RUBRIC" ]; then
+  grep_flat "$RUBRIC" '0.6 × value + 0.4 × urgency'
   check $? "scoring-rubric.md carries the composite weights"
 
-  grep -qF 'Default gate: **80**' "$CONDUCTOR/references/scoring-rubric.md"
+  grep_flat "$RUBRIC" 'Default gate: **80**'
   check $? "scoring-rubric.md carries the default gate"
 
-  grep -qF 'Anchor — a merged duplicate is a migration' "$CONDUCTOR/references/scoring-rubric.md"
+  grep_flat "$RUBRIC" 'Anchor — a merged duplicate is a migration'
   check $? "scoring-rubric.md carries the merged-duplicate urgency anchor"
+
+  # The three checks above all target text OUTSIDE the two band tables and the tie-break: the
+  # composite line, the gate line, and the merged-duplicate anchor paragraph. Deleting the Value
+  # table, the Urgency table and the tie-break together therefore left the whole suite green
+  # (proven by mutation), i.e. the criteria the entire rubric exists to publish were deletable
+  # undetected. Anchored below to the top and bottom band of each table — so a table gutted down to
+  # its middle rows is caught too, not just one deleted wholesale — and to the tie-break's own
+  # ranking sentence. Each row is matched on both cells: the score range alone recurs (`40–69` and
+  # `70–89` appear in the anchor paragraph and in the smell analyst's honest-expectations note),
+  # and the criterion text alone would not prove it is still a table row.
+  grep_flat "$RUBRIC" '| 90–100 | Removes a live defect, a security hole, or a data-loss path |' \
+    && grep_flat "$RUBRIC" '| 0–39 | Stylistic preference, or defense-in-depth on a path already guarded elsewhere |'
+  check $? "scoring-rubric.md carries the Value band table"
+
+  grep_flat "$RUBRIC" '| 90–100 | Ships in this PR and is exploitable or breaking once merged |' \
+    && grep_flat "$RUBRIC" '| 0–39 | Cheaper later, or may become moot |'
+  check $? "scoring-rubric.md carries the Urgency band table"
+
+  grep_flat "$RUBRIC" '**Tie-break.** Rank by `composite` descending'
+  check $? "scoring-rubric.md carries the tie-break"
 fi
 
 # --- skills: frontmatter, naming, and cross-references -----------------------
@@ -164,50 +201,140 @@ done
 # document this size, with the section the word actually names deleted entirely.
 C="$CONDUCTOR/SKILL.md"
 if [ -s "$C" ]; then
-  grep -qF 'git worktree add --detach' "$C"
+  grep_flat "$C" 'git worktree add --detach'
   check $? "conductor: uses a worktree"
 
-  grep -qF 'git diff --numstat HEAD' "$C"
+  grep_flat "$C" 'git diff --numstat HEAD'
   check $? "conductor: snapshots with numstat"
 
   # Anchored to the exact bolded sentence, not a bare case-insensitive "auto-revert" substring —
   # the Red flags list separately says "Auto-reverting a reconciliation violation...", a different
   # phrasing that would keep an unanchored search passing even with this sentence, and the whole
   # rule it belongs to, deleted.
-  grep -qF '**Never auto-revert.**' "$C"
+  grep_flat "$C" '**Never auto-revert.**'
   check $? "conductor: forbids auto-revert"
 
   # The full one-liner, not just "/dev/urandom" — LC_ALL=C and | head -c 6 are both load-bearing
   # (byte-safe character class, and the six-character minimum) and a shortened grep would still
   # pass with either dropped from the actual command.
-  grep -qF "LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 6" "$C"
+  grep_flat "$C" "LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 6"
   check $? "conductor: run id generation is the full urandom one-liner"
 
-  grep -qF '<YYYY-MM-DD>-<pr-number>-<suffix>' "$C"
+  grep_flat "$C" '<YYYY-MM-DD>-<pr-number>-<suffix>'
   check $? "conductor: run id format is specified"
 
   # Two separate claims, honestly labeled: this one is the stated *consequence* of an analyst
   # returning a finding instead of a receipt, not the receipt format itself — see the next check.
-  grep -qF 'the firewall has already failed' "$C"
+  grep_flat "$C" 'the firewall has already failed'
   check $? "conductor: states the firewall-failure consequence of reading a finding"
 
   # The actual receipt contract analysts return. Previously unchecked — this could have been
   # deleted with nothing in the suite noticing.
-  grep -qF 'wrote <N> findings to <output_path>' "$C"
+  grep_flat "$C" 'wrote <N> findings to <output_path>'
   check $? "conductor: names the analyst receipt format"
 
   # Three specific paths from the artifact layout, not a bare '\.guardtower/' substring search —
   # that matched the JSON dispatch-brief line, a Red-flags bullet, and three other unrelated
   # sentences, so the entire Disk layout could be deleted while any one surviving mention of the
   # bare word ".guardtower/" kept a single check green.
-  grep -qF '.guardtower/<run>/findings/<lens>.json' "$C"
+  grep_flat "$C" '.guardtower/<run>/findings/<lens>.json'
   check $? "conductor: names the findings path in the artifact layout"
 
-  grep -qF '.guardtower/<run>/approved.md' "$C"
+  grep_flat "$C" '.guardtower/<run>/approved.md'
   check $? "conductor: names approved.md in the artifact layout"
 
-  grep -qF '.guardtower/<run>/deferred.md' "$C"
+  grep_flat "$C" '.guardtower/<run>/deferred.md'
   check $? "conductor: names deferred.md in the artifact layout"
+
+  # Three dispatch sites, three payloads, one uniform anchor each. The poster's is checked further
+  # down (it was added with Task 9); these two close the other two. Every one of them was written
+  # after the same bug: a dispatch site handing over a subset of the fields the dispatched skill
+  # declares it receives, so the skill is told to consult fields it was never given, and nothing in
+  # the suite noticed because no single task's diff contained both ends.
+  #
+  # The mapper's, from preflight step 7. Both clauses, not just one: the payload clause alone can
+  # be deleted while the explanation survives and vice versa, and each was separately green before
+  # this check existed.
+  grep_flat "$C" 'together with its payload: `worktree` — the absolute path from step 5 — and `head_sha` — from step 3.' \
+    && grep_flat "$C" 'dispatching it without this payload leaves it nothing to read'
+  check $? "conductor: names the mapper payload, not just the reference document"
+
+  # The arbitrator's. `threshold` and `worktree` are the load-bearing two: without the first, the
+  # gate the user agreed at preflight step 8 is silently discarded and the arbitrator falls back to
+  # its own example value; without the second, evidence is verified against the user's checked-out
+  # tree instead of the detached worktree — a silent wrong answer from the step the whole design
+  # rests on. Anchored to the paragraph that names them, not to the field names, which also appear
+  # in the JSON block and would survive its deletion — the same shape as the poster's check below.
+  grep_flat "$C" 'Name every field. `threshold` is not optional decoration'
+  check $? "conductor: names the arbitrator payload, not just the finding paths"
+
+  # `repo` was the one poster-payload field with a shape but no source: no preflight step produced
+  # it, since step 1 read the origin URL only to detect the forge and step 3's `gh pr view` does
+  # not request it. Anchored to the sentence in step 1 that makes the origin URL its provenance.
+  grep_flat "$C" 'it is the only place `repo` comes from'
+  check $? "conductor: preflight step 1 is where repo comes from"
+fi
+
+# --- the two conductor reference documents ------------------------------------
+#
+# Both had existence checks and nothing else: reducing either file to the single character "x" on a
+# scratch copy left the suite reporting 105 ok, PASS. That is not a small gap in either case.
+# mapping-the-repo.md is the mapper's COMPLETE brief — it is handed to a subagent with no other
+# instructions, so every rule in it (read only in the worktree, map at head_sha, return a structured
+# map, write nothing) is the only thing standing between the mapper and reading the user's checked-out
+# tree at the wrong commit. brief-template.md is the render contract between the arbitrator's return
+# and the human doing triage; a placeholder missing from it is a column missing from the only
+# document the human decides on.
+
+MAP="$CONDUCTOR/references/mapping-the-repo.md"
+if [ -s "$MAP" ]; then
+  grep_flat "$MAP" 'Read only **inside the worktree path** your dispatch brief names'
+  check $? "mapping-the-repo.md: reads only inside the worktree it was given"
+
+  grep_flat "$MAP" 'The dispatch brief also names `head_sha`; map the tree **at that commit**'
+  check $? "mapping-the-repo.md: maps at head_sha, not at whatever is checked out"
+
+  grep_flat "$MAP" 'Return a **structured map**, never a raw tree listing.'
+  check $? "mapping-the-repo.md: returns a structured map, never a tree dump"
+
+  grep_flat "$MAP" 'You do not write anything — not a report, not a cache, not a scratch note.'
+  check $? "mapping-the-repo.md: writes no files"
+
+  # Line-anchored on purpose, exactly as check_skill's equivalent is: this asserts the heading and
+  # therefore the section, and a flattened search would also be satisfied by the phrase appearing in
+  # body prose with the stop list itself deleted.
+  grep -q '^## Red flags — STOP' "$MAP"
+  check $? "mapping-the-repo.md: has a 'Red flags — STOP' section"
+fi
+
+BRIEF="$CONDUCTOR/references/brief-template.md"
+if [ -s "$BRIEF" ]; then
+  # The three-outcome summary. All three rows together, because the whole point of the table is
+  # that dropped and discarded are reported separately from each other and from passed.
+  grep_flat "$BRIEF" '| Passed the gate | {{PASSED_COUNT}} |' \
+    && grep_flat "$BRIEF" '| Dropped on evidence | {{DROPPED_COUNT}} |' \
+    && grep_flat "$BRIEF" '| Discarded by gate | {{DISCARDED_COUNT}} |'
+  check $? "brief-template.md: renders all three outcome counts"
+
+  grep_flat "$BRIEF" '**Threshold:** {{THRESHOLD}}' \
+    && grep_flat "$BRIEF" '**Lenses skipped:** {{LENSES_SKIPPED}}'
+  check $? "brief-template.md: names the threshold and the lenses that were skipped"
+
+  grep_flat "$BRIEF" '### {{ID}} — {{TARGET_FILE}}:{{TARGET_LINE}}'
+  check $? "brief-template.md: heads each finding with its id and location"
+
+  # The composite alone is not the contract — the brief must show the two numbers it was computed
+  # from, or a reader cannot tell a 93 built from value 95 from a 93 built from urgency 95.
+  grep_flat "$BRIEF" '- **Composite:** {{COMPOSITE}} (value {{VALUE}} / urgency {{URGENCY}})'
+  check $? "brief-template.md: breaks the composite out into value and urgency"
+
+  # also_at is produced by every analyst and was consumed by neither output surface: this template
+  # had no slot for it and the poster's comment body had none either, so for the abstraction lens —
+  # whose findings "usually span several files" — every location but one was silently dropped at
+  # both. Anchored to the line and to the omit-when-empty instruction that makes it renderable.
+  grep_flat "$BRIEF" '- **Also at:** {{ALSO_AT}}' \
+    && grep_flat "$BRIEF" 'The Also at line exists only on a finding whose also_at array is non-empty'
+  check $? "brief-template.md: renders also_at, omitted when empty"
 fi
 
 # --- the reuse analyst -------------------------------------------------------
@@ -222,41 +349,48 @@ if [ -s "$R" ]; then
   # `reimplements` or `duplicates` finding"), so a bare-name search (proven by mutation) still
   # passes with the entire "Three kinds of finding" section deleted. Each definition's own
   # sentence, by contrast, appears nowhere else in the file.
-  grep -qF 'the PR builds a capability that already exists whole' "$R"
+  grep_flat "$R" 'the PR builds a capability that already exists whole'
   check $? "reuse: names the 'reimplements' finding kind"
-  grep -qF 'specific logic repeated from an existing local implementation' "$R"
+  grep_flat "$R" 'specific logic repeated from an existing local implementation'
   check $? "reuse: names the 'duplicates' finding kind"
-  grep -qF 'leaving two patterns where there was one' "$R"
+  grep_flat "$R" 'leaving two patterns where there was one'
   check $? "reuse: names the 'diverges' finding kind"
 
   # Anchored to the tier table's own row labels, not the bare phrases "tier 1"/"tier 2" — those
   # also occur inside "tier 2 only" (the adoption_cost field's own description) and in the Red
   # flags item about a tier-2 finding, so a bare search would still pass with the tier table
   # itself deleted.
-  grep -qF '1 — already reachable' "$R" && grep -qF '2 — not yet installed' "$R"
+  grep_flat "$R" '1 — already reachable' && grep_flat "$R" '2 — not yet installed'
   check $? "reuse: defines both tiers"
 
   # Anchored to the specific normative sentence, not a bare "adoption_cost" search — that field
   # name necessarily also appears in the Return format JSON schema and in the Red flags list
   # regardless of whether the tier-2 requirement is ever actually stated in prose.
-  grep -qF 'Set `adoption_cost` whenever `tier` is `2`' "$R"
+  grep_flat "$R" 'Set `adoption_cost` whenever `tier` is `2`'
   check $? "reuse: requires adoption_cost for tier 2"
+
+  # And that the analyst is told to WRITE tier as a number, since the requirement above is only
+  # enforceable if the arbitrator's `tier: 2` comparison actually matches. The type was previously
+  # string-shaped here and integer-shaped in the plan's arbitrator interface; nothing tied them.
+  grep_flat "$R" 'Write `tier` as **a JSON number, `1` or `2` — never the string `"2"`**' \
+    && grep_flat "$R" '"tier": 1,'
+  check $? "reuse: writes tier as a JSON number"
 
   # Anchored to the sentence naming both evidence fields together, not a bare "existing_evidence"
   # search — that field name also appears standalone in the Return format JSON schema.
-  grep -qF '`existing_solution` and `existing_evidence`' "$R"
+  grep_flat "$R" '`existing_solution` and `existing_evidence`'
   check $? "reuse: requires the second half of evidence"
 
   # Exact-cased, punctuated match on the spec's own bolded sentence — not case-insensitive on the
   # bare phrase, which a much weaker sentence ("silence is not a substitute for looking") could
   # also satisfy without carrying the spec's actual wording.
-  grep -qF 'Silence is not a null answer.' "$R"
+  grep_flat "$R" 'Silence is not a null answer.'
   check $? "reuse: silence is not a null answer"
 
   # The distinctive half of the spec's own counter-example sentence — "lodash" alone would also
   # match a stray mention in unrelated prose (e.g. an adoption_cost example), so this anchors to
   # the actual worked example rather than the word appearing anywhere.
-  grep -qF 'Import lodash for a three-line' "$R"
+  grep_flat "$R" 'Import lodash for a three-line'
   check $? "reuse: carries the concrete tier-2 counter-example"
 fi
 
@@ -393,9 +527,15 @@ if [ -s "$B" ]; then
   # bare searches pass even with the sentence that actually distinguishes them deleted. Anchored
   # to that distinguishing sentence itself, AND (Task 8 review, Minor #3) to the `dropped` bullet's
   # negative-field-carriage line — the first check alone left the three-outcome bullet definitions
-  # themselves deletable with the suite still green.
+  # themselves deletable with the suite still green. The `discarded` and `passed` bullets were left
+  # unanchored by that round (deferred out of Task 8) and are added here: with only the `dropped`
+  # bullet anchored, the other two definitions — the ones that say a discarded finding WAS verified
+  # and scored, which is the whole distinction between it and a dropped one — were still deletable
+  # with the suite green.
   grep_flat "$B" 'Returning a dropped finding as discarded would tell the user a fabricated claim was merely low-priority.' \
-    && grep_flat "$B" 'Carries `reason`, never `value`, `urgency`, or `composite`.'
+    && grep_flat "$B" 'Carries `reason`, never `value`, `urgency`, or `composite`.' \
+    && grep_flat "$B" 'verified, scored, and `composite` fell short of `threshold`.' \
+    && grep_flat "$B" 'verified, scored, and cleared the gate.'
   check $? "arbitrator: keeps dropped and discarded distinct, including by field carriage"
 fi
 
@@ -441,6 +581,26 @@ if [ -s "$P" ]; then
   # own bolded rule sentence.
   grep_flat "$P" 'Never post a finding the user did not approve.'
   check $? "poster: refuses to post anything not approved"
+
+  # The gh heredoc delimiter is UNQUOTED on purpose: `<<'JSON'` suppresses every expansion inside
+  # the body, so `$HEAD_SHA` would post as that literal nine-character string and the review would
+  # attach to nothing. A future editor "fixing" the delimiter to the quoted form reintroduces that
+  # bug with every other check in this suite still green, so it gets both a positive and a negative
+  # assertion.
+  #
+  # Both are anchored to `--input - <<JSON`, the actual command line, NOT to a bare `<<JSON`. That
+  # matters in both directions here. The bare positive would be satisfied by the prose sentence
+  # above the code block, which names the delimiter to explain the rule — so the whole gh code block
+  # could be deleted and the check would still pass. And the bare negative would FAIL against a
+  # correct tree, because that same explanatory sentence contains the string `<<'JSON'` verbatim as
+  # the thing it forbids; a plugin that may not spell out the mistake it is warning about is the
+  # same absurdity the jq check below rejects. Anchoring both to the invocation tests the command
+  # and leaves the prose free to describe it.
+  grep_flat "$P" '--input - <<JSON'
+  check $? "poster: the gh api heredoc delimiter is unquoted"
+
+  ! grep_flat "$P" "--input - <<'JSON'"
+  check $? "poster: the gh api heredoc delimiter is not the quoted form"
 fi
 
 # The poster reads base_sha, run_id, lenses_run and lenses_skipped, none of which are in its
@@ -451,16 +611,67 @@ fi
 grep_flat "$CONDUCTOR/SKILL.md" 'Name every field. `base_sha` is not optional decoration'
 check $? "conductor: names the poster payload, not just the approved set"
 
+# --- one authority for the numbers every document repeats ---------------------
+#
+# The composite formula appears in four documents and the rubric's total order in three, and until
+# now each was asserted independently — the formula at two separate call sites in this file with
+# nothing tying them. Independent assertions prove each document says SOMETHING; they never prove
+# the documents agree. Reweight the formula in one place only and every independent check still
+# passes while the plugin scores two different ways depending on which document a reader followed —
+# and reproducibility across runs is the entire reason the rubric is published.
+#
+# So: extract the string from scoring-rubric.md, which is the published authority both the analysts
+# and the arbitrator are told to work to, and assert the others carry it verbatim. The extraction
+# doubles as an anchor on the rubric itself — delete the line there and the variable comes back
+# empty, which is tested before it is used, so an empty string can never trivially "match"
+# everywhere. README.md's mermaid node states the same weights in an ASCII, unrounded form that a
+# diagram renderer requires (`0.6 x value + 0.4 x urgency`) and is deliberately NOT included here:
+# forcing it to carry the prose string verbatim would mean breaking the diagram to satisfy a test.
+if [ -s "$RUBRIC" ]; then
+  flat_rubric=$(tr '\n' ' ' < "$RUBRIC" | tr -s ' ')
+
+  formula=$(printf '%s\n' "$flat_rubric" | sed -n 's/.*\*\*Composite:\*\* `\([^`]*\)`.*/\1/p')
+  [ -n "$formula" ]; check $? "scoring-rubric.md is the one authority for the composite formula"
+
+  miss=""
+  if [ -n "$formula" ]; then
+    for doc in "$PLUGIN/skills/arbitrating-findings/SKILL.md" \
+               "$CONDUCTOR/references/finding-schema.md" \
+               "$PLUGIN/README.md"; do
+      grep_flat "$doc" "$formula" || miss="$miss ${doc#"$PLUGIN"/}"
+    done
+  else
+    miss=" (formula not extracted)"
+  fi
+  [ -z "$miss" ]; check $? "every document repeats the rubric's composite formula verbatim (mismatched:$miss)"
+
+  order=$(printf '%s\n' "$flat_rubric" | sed -n 's/.*\*\*Tie-break\.\*\* Rank by \(.*\) — a total order.*/\1/p')
+  [ -n "$order" ]; check $? "scoring-rubric.md is the one authority for the total order"
+
+  miss=""
+  if [ -n "$order" ]; then
+    for doc in "$PLUGIN/skills/arbitrating-findings/SKILL.md" \
+               "$CONDUCTOR/references/brief-template.md"; do
+      grep_flat "$doc" "$order" || miss="$miss ${doc#"$PLUGIN"/}"
+    done
+  else
+    miss=" (order not extracted)"
+  fi
+  [ -z "$miss" ]; check $? "every document repeats the rubric's total order verbatim (mismatched:$miss)"
+fi
+
 # --- no skill or command shells out to jq -------------------------------------
 #
 # The brief's own literal check here is:
 #   ! grep -rqw jq "$PLUGIN/skills" "$PLUGIN/commands" 2>/dev/null
-# Run against the current tree this FAILS: two skills legitimately contain the word "jq" —
-# arbitrating-findings/SKILL.md's Red flags bullet forbidding a shell-out to jq, and
-# reviewing-a-pull-request/SKILL.md's aside comparing a missing jq to a missing gh/glab. Both are
-# correct and desirable prose; a plugin that may not even name the tool it forbids is absurd. A
-# bare `grep -w jq` cannot tell "names jq" from "invokes jq", so the literal check is rejected
-# outright rather than merely re-anchored. This checks for actual invocation instead: jq appearing
+# Run against the current tree this FAILS: three skills legitimately contain the word "jq", four
+# times between them — arbitrating-findings/SKILL.md's Red flags bullet forbidding a shell-out to
+# jq, posting-review-comments/SKILL.md's Red flags bullet forbidding the same thing (twice, across
+# the two lines it wraps to), and reviewing-a-pull-request/SKILL.md's aside comparing a missing jq
+# to a missing gh/glab. All are correct and desirable prose; a plugin that may not even name the
+# tool it forbids is absurd. A bare `grep -w jq` cannot tell "names jq" from "invokes jq", so the
+# literal check is rejected outright rather than merely re-anchored. This checks for actual
+# invocation instead: jq appearing
 # anywhere inside a fenced sh/bash/shell/zsh block, or jq preceded by a pipe, semicolon, `&&`, or
 # an opening backtick and followed by whitespace or a quoted argument — never a bare backtick-quoted
 # mention like `jq` on its own with nothing after it. Proven by mutation in the task report: a real

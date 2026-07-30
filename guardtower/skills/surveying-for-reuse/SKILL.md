@@ -142,7 +142,7 @@ Write exactly this shape to `output_path`:
       "also_at": ["<file:line>"],
 
       "kind": "reimplements | duplicates | diverges",
-      "tier": "1 | 2",
+      "tier": 1,
       "existing_solution": "<repo path, or package + exact export, or stdlib/platform API>",
       "existing_evidence": "<source text or documented signature proving it covers the claim>",
       "adoption_cost": "<tier 2 only: supply-chain surface, maintenance, version churn>"
@@ -153,7 +153,10 @@ Write exactly this shape to `output_path`:
 
 For every finding this lens emits, `kind`, `tier`, `existing_solution`, and `existing_evidence`
 are always set. Set `adoption_cost` whenever `tier` is `2`; omit it for tier 1, where no dependency
-is being adopted.
+is being adopted. Write `tier` as **a JSON number, `1` or `2` — never the string `"2"`**: the
+arbitrator's tier-2 adoption-cost requirement is a hard drop condition, and a quoted tier fails the
+comparison that triggers it, so a tier 2 finding with no stated cost would sail through the one
+check meant to catch it.
 
 `id`, `value`, `urgency`, and `composite` are never yours to set.
 

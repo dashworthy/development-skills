@@ -59,9 +59,11 @@ branch:
    on GitLab. Both resolve fork-sourced changes.
 2. `git worktree add --detach <tempdir> <head-sha>` — a second checkout in a temp directory
    **outside the repository**, e.g. `<tempdir>=$(mktemp -d)`. Not just hygiene: a worktree left
-   inside the repo tree shows up as an untracked path at the Reconcile re-measure and HALTs a clean
-   run every time — even though it did no harm, the run stops anyway, because reconciliation cannot
-   tell a harmless worktree from a real violation by path alone. See **Reconcile**.
+   inside the repo tree, anywhere that resolves outside `.guardtower/`, shows up as an untracked
+   path at the Reconcile re-measure and HALTs an otherwise clean run — even though it did no harm,
+   the run stops anyway, because reconciliation cannot tell a harmless worktree from a real
+   violation by path alone. `mktemp -d` puts it out of reach of that test entirely, which is why
+   it is the instruction rather than "pick a path under `.guardtower/`". See **Reconcile**.
 3. Analysts and the mapper read **inside that worktree**. The `<base-sha>...<head-sha>` diff is
    computed there too.
 4. Remove the worktree at the end of the run, on every exit path including a halt — see
@@ -74,7 +76,11 @@ it. And reconciliation therefore only has to watch the **main** tree — see **R
 ### Steps
 
 1. **Detect the forge** from `git remote get-url origin`. `github.com` → `gh`; `gitlab.*` →
-   `glab`. Self-hosted or ambiguous → ask the user, do not guess.
+   `glab`. Self-hosted or ambiguous → ask the user, do not guess. **Keep the path portion of that
+   same URL**: it is the only place `repo` comes from — `owner/repo` on GitHub, the full project
+   path (`group/subgroup/project`, or the numeric project id) on GitLab. Nothing later in preflight
+   produces it; step 3's `gh pr view` is not asked for it, so a run that discards the origin URL
+   after the forge check has to go back for it at **Post**.
 2. **Verify the CLI** is present and authenticated — `gh auth status` or `glab auth status`.
    Missing or unauthenticated → name the tool, say how to fix it, and stop. This mirrors verity's
    stance on a missing `jq`: a fixable local problem is not a reason to quietly deliver less.
@@ -137,15 +143,42 @@ Each analyst reads the diff and whatever files it needs from the worktree, write
 `output_path` in the shape `references/finding-schema.md` defines, and returns **only a receipt**:
 `wrote <N> findings to <output_path>` — never a finding, never a summary of one.
 
-**State this plainly: an analyst returns a receipt; if you find yourself reading a finding, the firewall has already failed.**
-The conductor's context grows by one short receipt per lens, independent of PR size.
+**State this plainly: an analyst returns a receipt; if you find yourself reading a finding, the
+firewall has already failed.** The conductor's context grows by one short receipt per lens,
+independent of PR size.
 
-Once every dispatched analyst has returned its receipt, dispatch `arbitrating-findings` with the
-set of `output_path`s. It reads the finding files itself, verifies each one's evidence against the
-worktree at the head sha, scores and gates what holds per `references/scoring-rubric.md`, and
-returns exactly three things — the items that cleared the threshold, the dropped list with each
-item's one-line reason its evidence didn't hold, and the discarded entries that were verified but
-scored below the threshold — and nothing else. This is the one return value **Context discipline**
+Once every dispatched analyst has returned its receipt, dispatch `arbitrating-findings` with this
+payload:
+
+```json
+{
+  "finding_paths": ["<each dispatched analyst's output_path>"],
+  "worktree":      "<absolute path from preflight step 5>",
+  "base_sha":      "<from preflight step 3>",
+  "head_sha":      "<from preflight step 3>",
+  "threshold":     "<the value agreed in preflight step 8>",
+  "lenses_run":    ["<lens>", "..."]
+}
+```
+
+Name every field. `threshold` is not optional decoration: it is the gate the arbitrator applies,
+and preflight step 8 exists precisely so the user can move it. Hand over the paths alone, and the
+number the user agreed is silently discarded — the arbitrator falls back to the `80` in its own
+example dispatch — so "agree the gate" becomes decorative. `worktree` is where the arbitrator
+resolves `target_file` and `existing_solution`, never the user's checked-out tree; without it,
+evidence is verified against whatever tree the subagent happens to be standing in, which is the
+user's own possibly-dirty checkout, and the single step this whole design rests on returns a
+verdict it never actually verified. `base_sha` and `head_sha` fix the revision verification runs
+against, and `lenses_run` is the sanity check that `finding_paths` holds exactly one entry per lens
+actually dispatched. A conductor that hands over only the paths is telling the arbitrator to
+consult five fields it was never given — the same gap the mapper dispatch had before preflight
+step 7 spelled its payload out, and the poster's had before **Post** did.
+
+It reads the finding files itself, verifies each one's evidence against the worktree at the head
+sha, scores and gates what holds per `references/scoring-rubric.md`, and returns exactly three
+things — the items that cleared the threshold, the dropped list with each item's one-line reason
+its evidence didn't hold, and the discarded entries that were verified but scored below the
+threshold — and nothing else. This is the one return value **Context discipline**
 names as the permitted exception. It is also the only source for `brief.md`'s summary counts and
 for **Reporting, always** below: the conductor cannot re-derive a dropped or discarded count from
 anywhere else without reading a finding file itself, which rule two forbids.
@@ -169,7 +202,10 @@ remains is a write into the **main** tree:
 - Resolve every touched path with `readlink -f` (or `cd "$(dirname …)" && pwd -P`) before
   comparing, so a symlink pointing out of the allowed area is caught by its existence.
 - Anything resolving outside `.guardtower/` **HALTS the run**: surface the offending paths and
-  their diff to the user, and stop. The worktree is still removed — see **Cleanup**.
+  **the reconciliation diff of those paths** — what a subagent changed in them between the snapshot
+  and the re-measure — to the user, and stop. That is not the PR diff, which rule two keeps out of
+  this context regardless; it is the evidence of the violation, and it is confined to the paths the
+  comparison just named. The worktree is still removed — see **Cleanup**.
 
 **Never auto-revert.** Reverting is destructive and cannot distinguish a bug worth diagnosing from
 evidence the user needs intact.
@@ -194,7 +230,7 @@ Dispatch `posting-review-comments` with this payload:
 {
   "forge": "github | gitlab",
   "pr_number": "<from the reference the user gave>",
-  "repo": "<owner/repo, or GitLab project id/path>",
+  "repo": "<owner/repo, or GitLab project id/path — from the origin URL, preflight step 1>",
   "base_sha": "<from preflight step 3>",
   "head_sha": "<from preflight step 3>",
   "run_id": "<this run's id>",

@@ -107,12 +107,12 @@ finding — read the surrounding code before you write one, not after.
 
 ## Severity feeds scoring, it is not scoring
 
-You do not score. `value`, `urgency`, and `composite` are the arbitrator's to assign, not yours —
-see **Red flags** below. Your `rationale` is the raw material the arbitrator scores against, so
-read `../reviewing-a-pull-request/references/scoring-rubric.md` before you write one, and write it
-in those terms: what breaks, for whom, how they find out. State the exploitation path there too —
-who the attacker is, what they control, what they get — the same statement that makes this a
-finding in the first place doubles as the evidence the arbitrator needs to score it.
+You do not score. `id`, `value`, `urgency`, and `composite` are the arbitrator's to assign, not
+yours — see **Red flags** below. Your `rationale` is the raw material the arbitrator scores
+against, so read `../reviewing-a-pull-request/references/scoring-rubric.md` before you write one,
+and write it in those terms: what breaks, for whom, how they find out. State the exploitation path
+there too — who the attacker is, what they control, what they get — the same statement that makes
+this a finding in the first place doubles as the evidence the arbitrator needs to score it.
 
 ## Return format
 

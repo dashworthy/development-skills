@@ -424,7 +424,15 @@ guardtower/
   skills/simplifying-through-abstraction/SKILL.md
   skills/arbitrating-findings/SKILL.md
   skills/posting-review-comments/SKILL.md
+  tests/validate.sh
+  tests/e2e.sh
 ```
+
+`tests/validate.sh` is the structural and behavioural suite: POSIX sh, python3 stdlib only for JSON,
+never jq, runnable from anywhere as `sh guardtower/tests/validate.sh`. `tests/e2e.sh` is the
+end-to-end check and is deliberately not part of that suite — it installs the plugin at local scope
+in a scratch repo and makes live `claude -p` calls to prove the command refuses to run where it
+cannot, so it is run by hand rather than as part of validation. It posts nothing and touches no PR.
 
 No `hooks/` directory. Plus a `guardtower` entry in `.claude-plugin/marketplace.json`.
 
@@ -478,7 +486,11 @@ Not part of the build, listed so they are not lost:
 
 - Add `Edit(./guardtower/**)` and `Write(./guardtower/**)` to `.claude/settings.json`'s deny list
   once the plugin is finished, matching how `signal` and `verity` are frozen.
-- Decide whether `.guardtower/` belongs in this repo's `.gitignore`, as `.signal/` is.
+- `.guardtower/` belongs in this repo's `.gitignore`, as `.signal/` is. **Decided: yes.** Run
+  artifacts — the per-run findings, brief, approved and deferred files — are per-run scratch, not
+  source, and a later run never reads an earlier one's. Both this and the deny rules are asserted by
+  `guardtower/tests/validate.sh`, so the freeze is a property the plugin tests rather than a
+  convention to remember.
 
 ## Explicit non-goals
 

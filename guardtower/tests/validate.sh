@@ -156,10 +156,29 @@ fi
 # Both are live links a reader is sent to follow, and breaking either left the suite green — proven
 # by mutation.
 #
-# A BARE basename is deliberately NOT matched, and that is not an oversight to fix later: the run
-# artifacts `brief.md`, `approved.md` and `deferred.md` have exactly that shape, are named in these
-# documents as paths under `.guardtower/<run>/` that exist only at runtime, and have no counterpart
-# on disk in this repository. Matching them would make this check FAIL against a correct tree.
+# A BARE basename is deliberately NOT matched here, and that is not an oversight to fix later. The
+# run artifacts are part of the reason but NOT the blocking one, so do not read this as "skip-list
+# three names and the widening works" — that was tried and it still fails. Precisely:
+#
+#   * `brief.md` and `deferred.md` do occur bare (arbitrating-findings/SKILL.md:156,
+#     posting-review-comments/SKILL.md:14 and :142, reviewing-a-pull-request/SKILL.md:40 and :182).
+#     They name paths under `.guardtower/<run>/` that exist only at runtime and have no counterpart
+#     on disk, so matching them would FAIL against a correct tree. `approved.md` never occurs bare
+#     at all — only ever as `.guardtower/<run>/approved.md`, which the leading `/` already excludes.
+#
+#   * The case that still fails with all three skip-listed is a SHORTHAND BACK-REFERENCE.
+#     arbitrating-findings/SKILL.md:166 reads "Inventing scoring criteria instead of applying
+#     `scoring-rubric.md` as written" — a deliberately short second mention of the document whose
+#     authoritative full path the SAME file already gives at :63
+#     (`../reviewing-a-pull-request/references/scoring-rubric.md`). It resolves for a human reader
+#     via that earlier line, and it cannot resolve in-dir, because the file lives in another skill's
+#     directory. No skip list fixes that; the only way to make a global bare-basename match pass
+#     would be to lengthen correct prose to satisfy a test.
+#
+# Where a bare basename IS the natural and correct relative form — a sibling citation between two
+# files in the same references/ directory — it is checked separately and scoped to that directory,
+# where no shorthand back-reference of the kind above occurs. See "reference documents: sibling
+# citations exist" below.
 check_links() {  # check_links <file> <label prefix>
   _dir=$(dirname "$1")
   missing=""
@@ -289,6 +308,22 @@ if [ -s "$C" ]; then
   grep_flat "$C" 'Name every field. `threshold` is not optional decoration'
   check $? "conductor: names the arbitrator payload, not just the finding paths"
 
+  # …and the payload the prose is ABOUT. The check above anchors only the justifying prose, on the
+  # deliberate reasoning that the field names also appear in the JSON block and would survive its
+  # deletion. That reasoning is right for what it covers and covers only one of two halves: deleting
+  # the `threshold` and `lenses_run` lines FROM the JSON block, leaving the prose untouched, left the
+  # whole suite at PASS, exit 0 — proven by mutation. `threshold` is the one that matters most: it is
+  # the gate the user agreed at preflight step 8, and losing it from the rendered payload is exactly
+  # the silent discard the prose above exists to prevent, with the sentence forbidding it still on
+  # the page. Two clauses, one per field, since each line is separately deletable.
+  #
+  # The `lenses_run` anchor carries the block's closing brace because that same line, verbatim,
+  # also appears in the poster dispatch payload further down; without the brace this check would
+  # stay green on the poster's copy with the arbitrator's deleted.
+  grep_flat "$C" '"threshold": "<the value agreed in preflight step 8>",' \
+    && grep_flat "$C" '"lenses_run": ["<lens>", "..."] }'
+  check $? "conductor: the arbitrator dispatch payload carries threshold and lenses_run"
+
   # `repo` was the one poster-payload field with a shape but no source: no preflight step produced
   # it, since step 1 read the origin URL only to detect the forge and step 3's `gh pr view` does
   # not request it. Anchored to the sentence in step 1 that makes the origin URL its provenance.
@@ -367,6 +402,36 @@ fi
 for ref in "$CONDUCTOR"/references/*.md; do
   [ -f "$ref" ] && check_links "$ref" "reference $(basename "$ref")"
 done
+
+# The one citation shape check_links cannot match globally: a BARE basename. Between two files in
+# the same references/ directory that is the natural relative form, and finding-schema.md:68 uses
+# it — the "What the arbitrator owns" section sends the reader to `scoring-rubric.md` for the bands
+# `value` and `urgency` are scored against. It was the last cross-reference in the plugin with
+# nothing asserting its target exists: proven by mutation, misspelling it to `scoring-rubrik.md`
+# left the whole suite at PASS, exit 0.
+#
+# Scoped to references/*.md on purpose. That directory is exactly where a bare basename is correct
+# and where the shorthand back-reference that blocks the same widening in skills/ does not occur —
+# see check_links' comment above for that case. The three runtime artifacts are still excluded by
+# name, for the reason given there; two of them never appear in this directory at all, but the
+# exclusion travels with the pattern so a future reference document may name them freely.
+missing=""
+for ref in "$CONDUCTOR"/references/*.md; do
+  [ -f "$ref" ] || continue
+  # `sed 's/^/ /'` is load-bearing, not cosmetic: the delimiter class below must match SOMETHING,
+  # and writing it optional as `(^|[^...])` is not available — BSD grep -Eo, which is what macOS
+  # ships, silently matches nothing when `^` appears inside an alternation. Prefixing every line
+  # with a space guarantees a line-initial citation still has a delimiter to consume. The trailing
+  # sed then strips back to the last character that cannot be part of a basename, which is
+  # byte-safe and so survives a multi-byte delimiter such as an em dash.
+  for r in $(sed 's/^/ /' "$ref" \
+             | grep -Eo '[^/A-Za-z0-9._-][a-z0-9-]+\.md' \
+             | sed 's/.*[^a-z0-9.-]//' | sort -u); do
+    case " brief.md approved.md deferred.md " in *" $r "*) continue ;; esac
+    [ -f "$(dirname "$ref")/$r" ] || missing="$missing $(basename "$ref"):$r"
+  done
+done
+[ -z "$missing" ]; check $? "reference documents: sibling citations exist (missing:$missing)"
 
 # --- the reuse analyst -------------------------------------------------------
 
@@ -645,6 +710,24 @@ if [ -s "$P" ]; then
 
   ! grep_flat "$P" "--input - <<'JSON'"
   check $? "poster: the gh api heredoc delimiter is not the quoted form"
+
+  # The poster's own half of the dispatch contract: the paragraph that separates the five fields
+  # this skill DECLARES as its interface from the four it is additionally handed, and says why each
+  # of the four is needed. The conductor's half is anchored twice below (prose and payload); this
+  # half had nothing, and deleting the whole paragraph left the suite at PASS, exit 0 — proven by
+  # mutation. Without it a maintainer reading only this file sees nine fields arrive in the What you
+  # receive block with no statement of which are contractual, and trimming the payload back to the
+  # declared five silently removes `base_sha` (GitLab cannot anchor a diff position without it) and
+  # `run_id`/`lenses_run`/`lenses_skipped` (the summary comment cannot name the run or admit what
+  # was skipped).
+  #
+  # Two clauses, because the two sentences are separately deletable and each is wrong alone: the
+  # declared-five sentence without the justification invites deleting the other four as unexplained
+  # extras, and the justification without the declared-five sentence no longer distinguishes them
+  # from the interface.
+  grep_flat "$P" '`forge`, `pr_number`, `repo`, `approved`, and `head_sha` are this task'"'"'s declared interface.' \
+    && grep_flat "$P" 'are included alongside them because two requirements below cannot be met without them'
+  check $? "poster: distinguishes its declared interface from the four fields carried alongside"
 fi
 
 # The poster reads base_sha, run_id, lenses_run and lenses_skipped, none of which are in its
@@ -654,6 +737,22 @@ fi
 # JSON block and would survive its deletion.
 grep_flat "$CONDUCTOR/SKILL.md" 'Name every field. `base_sha` is not optional decoration'
 check $? "conductor: names the poster payload, not just the approved set"
+
+# …and the payload itself, for the same two-clause reason as the arbitrator dispatch above. The
+# check immediately above anchors only the justifying prose, deliberately so; the consequence is
+# that the ENTIRE poster dispatch JSON block could be deleted with the suite still at PASS, exit 0
+# — proven by mutation. A conductor whose prose says "name every field" over a block that no longer
+# exists dispatches the poster with nothing, and the poster's own instructions then send it to
+# consult eight fields it was never handed.
+#
+# Three clauses: the opening field, the contiguous run of the four fields the prose above declares
+# load-bearing, and the closing one. Top-and-bottom alone would catch the block being deleted
+# wholesale but not gutted down to its middle, which is the same failure mode the rubric band-table
+# checks are anchored against.
+grep_flat "$CONDUCTOR/SKILL.md" '"forge": "github | gitlab",' \
+  && grep_flat "$CONDUCTOR/SKILL.md" '"base_sha": "<from preflight step 3>", "head_sha": "<from preflight step 3>", "run_id": "<this run'"'"'s id>", "lenses_run": ["<lens>", "..."], "lenses_skipped": ["<lens>", "..."],' \
+  && grep_flat "$CONDUCTOR/SKILL.md" '"approved": ["<the in-scope subset of the arbitrator'"'"'s passed array>"]'
+check $? "conductor: the poster dispatch payload block is present and complete"
 
 # --- one authority for the numbers every document repeats ---------------------
 #
@@ -811,6 +910,34 @@ fi
 expected="arbitrating-findings detecting-code-smell posting-review-comments reviewing-a-pull-request reviewing-for-security simplifying-through-abstraction surveying-for-reuse"
 actual=$(ls "$PLUGIN/skills" | sort | tr '\n' ' ' | sed 's/ $//')
 [ "$actual" = "$expected" ]; check $? "skill set is exactly the seven planned skills"
+
+# --- the finished plugin is frozen, as signal and verity are ----------------
+#
+# Asserted from inside the plugin's own suite so the freeze is a property the plugin tests, not a
+# convention someone has to remember. The deny rules live in .claude/settings.json, which IS
+# committed (see .gitignore's note) precisely so they travel with the repo; a checkout that has
+# guardtower but not the rules is an unfrozen guardtower, and this check is what says so.
+#
+# `deny` is read as a set and tested for containment rather than compared to a literal list: signal
+# and verity's entries are already there, an `allow` list sits alongside it, and neither is this
+# check's business. Anchored to the two exact patterns, though — a `deny` that merely mentions
+# guardtower under some other pattern would not actually stop an Edit.
+
+python3 - "$ROOT/.claude/settings.json" <<'PY'
+import json,sys
+d=json.load(open(sys.argv[1]))
+deny=set(d["permissions"]["deny"])
+need={"Edit(./guardtower/**)","Write(./guardtower/**)"}
+missing=need-deny
+assert not missing, f"settings.json deny list missing: {sorted(missing)}"
+PY
+check $? "guardtower is frozen in .claude/settings.json"
+
+# Anchored to a whole line, not a substring: `.guardtower/` appearing inside a comment — and this
+# .gitignore carries several explanatory comments — must not satisfy a check that the pattern is
+# actually in force.
+grep -q '^\.guardtower/$' "$ROOT/.gitignore"
+check $? ".guardtower/ run artifacts are gitignored"
 
 printf '\n'
 if [ "$fail" -eq 0 ]; then printf 'PASS\n'; else printf 'FAILURES PRESENT\n'; fi

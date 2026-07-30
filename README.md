@@ -7,7 +7,7 @@ Each plugin here is self-contained. They share an author and a marketplace, not 
 ## Add the marketplace
 
 ```
-/plugin marketplace add https://github.com/dashworthy/development-skills
+/plugin marketplace add https://github.com/dashworthy/marketplace
 ```
 
 Then install whichever plugins you want:

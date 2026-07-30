@@ -42,7 +42,7 @@ flowchart TD
         L3 --> STAGE
         L4 --> STAGE
         STAGE[("<b>.guardtower/&lt;run&gt;/findings/</b><br/>one JSON per lens.<br/>Analysts return ONLY a receipt —<br/>the conductor never sees a finding")]
-        STAGE --> ARB["Arbitrator is handed the paths<br/>and reads the files itself"]
+        STAGE --> ARB["Arbitrator is handed the full payload —<br/>finding paths, worktree, base and head sha,<br/>threshold, lenses run — and reads the files itself"]
         ARB --> VER{"Does the cited evidence<br/>still hold at the head sha?"}
         VER -->|no| DROPPED["Dropped with a reason.<br/>Never scored"]
         VER -->|yes| SCORE["Score value and urgency 0-100.<br/>composite = 0.6 x value + 0.4 x urgency"]
@@ -52,7 +52,7 @@ flowchart TD
     end
 
     PASSED --> RECON{"Reconcile the main tree against the snapshot:<br/>anything touched outside .guardtower/ ?"}
-    RECON -->|violation| HALTR["HALT — surface the paths and their diff.<br/>Never auto-revert"]
+    RECON -->|violation| HALTR["HALT — surface the paths and the reconciliation<br/>diff of just those paths, never the PR diff.<br/>Never auto-revert"]
     RECON -->|clean| WRITEBRIEF["Conductor renders the brief<br/>from references/brief-template.md"]
     WRITEBRIEF --> TRIAGE{"You triage each finding<br/>that cleared the gate"}
     TRIAGE -->|out of scope| DEFERRED[("&lt;run&gt;/deferred.md<br/>write-only backlog.<br/>Never posted, never read by a later run")]

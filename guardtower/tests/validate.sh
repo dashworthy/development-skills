@@ -142,6 +142,33 @@ fi
 
 # --- skills: frontmatter, naming, and cross-references -----------------------
 
+# Every document a markdown file cross-references must exist, resolved against the directory THAT
+# FILE lives in — not against a fixed root, because the same citation text means different things
+# from a SKILL.md and from a file one level deeper in references/. `[ -f "$_dir/$r" ]` handles the
+# embedded ".." itself, so no realpath is needed.
+#
+# Two target shapes are matched, each behind any chain of `../` and directory components: a
+# `references/<name>.md` document, and a `SKILL.md`. Both halves of that pattern were widened after
+# M8. The old pattern required a literal `references/` segment and allowed at most one `../` level,
+# so it matched neither `../arbitrating-findings/SKILL.md` (cited by the poster for the
+# authoritative finding field list) nor `../../surveying-for-reuse/SKILL.md` (cited by
+# finding-schema.md's `kind` row for the definitions of `reimplements`/`duplicates`/`diverges`).
+# Both are live links a reader is sent to follow, and breaking either left the suite green — proven
+# by mutation.
+#
+# A BARE basename is deliberately NOT matched, and that is not an oversight to fix later: the run
+# artifacts `brief.md`, `approved.md` and `deferred.md` have exactly that shape, are named in these
+# documents as paths under `.guardtower/<run>/` that exist only at runtime, and have no counterpart
+# on disk in this repository. Matching them would make this check FAIL against a correct tree.
+check_links() {  # check_links <file> <label prefix>
+  _dir=$(dirname "$1")
+  missing=""
+  for r in $(grep -Eo '(\.\./)*([a-z0-9-]+/)*(references/[a-z0-9-]+|SKILL)\.md' "$1" | sort -u); do
+    [ -f "$_dir/$r" ] || missing="$missing $r"
+  done
+  [ -z "$missing" ]; check $? "$2: all referenced files exist (missing:$missing)"
+}
+
 check_skill() {
   d="$PLUGIN/skills/$1"
   f="$d/SKILL.md"
@@ -167,18 +194,12 @@ check_skill() {
   keys=$(printf '%s\n' "$fm" | sed -n 's/^\([a-zA-Z0-9_-]*\): .*/\1/p' | sort -u | tr '\n' ' ')
   [ "$keys" = "description name " ]; check $? "skill $1: frontmatter has only name+description (got '$keys')"
 
-  # Every references/*.md the skill mentions must exist. The pattern also captures a leading
-  # chain of ../<dirname>/ components (extended regex, not the old bare 'references/...'), so a
-  # cross-skill citation like "../reviewing-a-pull-request/references/scoring-rubric.md" resolves
-  # against $d correctly instead of being truncated to "references/scoring-rubric.md" and checked
-  # against the wrong directory. `[ -f "$d/$r" ]` handles the embedded ".." itself — no realpath
-  # needed. Discovered by Task 4: an analyst skill legitimately cites a reference file that lives
-  # in the conductor's directory, not its own.
-  missing=""
-  for r in $(grep -Eo '(\.\./[a-z0-9-]+/)*references/[a-z0-9-]+\.md' "$f" | sort -u); do
-    [ -f "$d/$r" ] || missing="$missing $r"
-  done
-  [ -z "$missing" ]; check $? "skill $1: all referenced files exist (missing:$missing)"
+  # Every document this skill cites must exist. Discovered by Task 4: an analyst skill legitimately
+  # cites a reference file that lives in the conductor's directory, not its own, so the citation has
+  # to resolve against $d rather than being truncated to its last two components and checked against
+  # the wrong directory. See check_links above for the pattern and for why a bare basename is
+  # excluded from it.
+  check_links "$f" "skill $1"
 
   # House style: every skill ends with a "Red flags — STOP" section. Anchored to the heading
   # itself (line start, level-2, exact phrase) rather than a bare "Red flags" substring search —
@@ -336,6 +357,16 @@ if [ -s "$BRIEF" ]; then
     && grep_flat "$BRIEF" 'The Also at line exists only on a finding whose also_at array is non-empty'
   check $? "brief-template.md: renders also_at, omitted when empty"
 fi
+
+# The reference documents' OWN cross-references, which check_skill never sees: it is called once per
+# skill and reads only that skill's SKILL.md, so a link written inside references/ was unvalidated
+# no matter how it was spelled. finding-schema.md's `kind` row is the live case — it sends the
+# reader to `../../surveying-for-reuse/SKILL.md` for the definitions of the three values that row
+# admits, and the definitions genuinely live only there. Proven by mutation: repointing that link at
+# a file that does not exist left the whole suite green.
+for ref in "$CONDUCTOR"/references/*.md; do
+  [ -f "$ref" ] && check_links "$ref" "reference $(basename "$ref")"
+done
 
 # --- the reuse analyst -------------------------------------------------------
 
@@ -575,6 +606,19 @@ if [ -s "$P" ]; then
   grep_flat "$P" '`in_diff: true` becomes an inline comment at `target_file`:`target_line`; `in_diff: false` becomes a line in the one summary comment.'
   check $? "poster: routes on in_diff"
 
+  # The poster's half of also_at. brief-template.md's half is anchored above; only that half got a
+  # check when the field was implemented, so this surface was deletable while green — proven by
+  # mutation: removing the `Also at:` line from the Comment body format left the suite at 129 ok /
+  # PASS, and removing it together with the whole omission rule did too. That is the exact gap the
+  # template check exists to close, sitting on the output surface for the abstraction lens, whose
+  # findings usually span several files while `target_file`/`target_line` names only the clearest.
+  # Two clauses because either half is separately deletable and separately wrong on its own: the
+  # format line without the rule renders an empty `Also at:` on every single-location finding, and
+  # the rule without the format line governs a line the template no longer has.
+  grep_flat "$P" 'Also at: <also_at, comma-joined>' \
+    && grep_flat "$P" 'The `Also at` line appears only when `also_at` is non-empty'
+  check $? "poster: renders also_at in the comment body, omitted when empty"
+
   # The brief's own literal check here is `grep -qi 'never post'` — a bare case-insensitive
   # substring the STANDING RULING calls out by name as too weak: those two words could survive in
   # unrelated phrasing with the actual unconditional rule deleted. Anchored instead to the skill's
@@ -671,12 +715,12 @@ fi
 # to a missing gh/glab. All are correct and desirable prose; a plugin that may not even name the
 # tool it forbids is absurd. A bare `grep -w jq` cannot tell "names jq" from "invokes jq", so the
 # literal check is rejected outright rather than merely re-anchored. This checks for actual
-# invocation instead: jq appearing
-# anywhere inside a fenced sh/bash/shell/zsh block, or jq preceded by a pipe, semicolon, `&&`, or
-# an opening backtick and followed by whitespace or a quoted argument — never a bare backtick-quoted
-# mention like `jq` on its own with nothing after it. Proven by mutation in the task report: a real
-# invocation added to a scratch fixture (piped, fenced, and inline-code forms) is caught; the two
-# real bare mentions in this tree are not.
+# invocation instead: jq appearing anywhere inside a fenced sh/bash/shell/zsh block, or jq preceded
+# by a pipe, semicolon, `&&`, or an opening backtick and followed by whitespace or a quoted
+# argument — never a bare backtick-quoted mention like `jq` on its own with nothing after it.
+# Proven by mutation in the task report: a real invocation added to a scratch fixture (piped,
+# fenced, and inline-code forms) is caught; all four of the real bare mentions counted above are
+# not.
 python3 - "$PLUGIN/skills" "$PLUGIN/commands" <<'PY'
 import re, sys, pathlib
 

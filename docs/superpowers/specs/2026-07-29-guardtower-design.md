@@ -57,7 +57,7 @@ flowchart TD
         L3 --> STAGE
         L4 --> STAGE
         STAGE[("<b>.guardtower/&lt;run&gt;/findings/</b><br/>one JSON per lens.<br/>Analysts return ONLY a receipt —<br/>the conductor never sees a finding")]
-        STAGE --> ARB["Arbitrator is handed the paths<br/>and reads the files itself"]
+        STAGE --> ARB["Arbitrator is handed the full payload —<br/>finding paths, worktree, base and head sha,<br/>threshold, lenses run — and reads the files itself"]
         ARB --> VER{"Does the cited evidence<br/>still hold at the head sha?"}
         VER -->|no| DROPPED["Dropped with a reason.<br/>Never scored"]
         VER -->|yes| SCORE["Score value and urgency 0-100.<br/>composite = 0.6 x value + 0.4 x urgency"]
@@ -67,7 +67,7 @@ flowchart TD
     end
 
     PASSED --> RECON{"Reconcile the main tree against the snapshot:<br/>anything touched outside .guardtower/ ?"}
-    RECON -->|violation| HALTR["HALT — surface the paths and their diff.<br/>Never auto-revert"]
+    RECON -->|violation| HALTR["HALT — surface the paths and the reconciliation<br/>diff of just those paths, never the PR diff.<br/>Never auto-revert"]
     RECON -->|clean| WRITEBRIEF["Conductor renders the brief<br/>from references/brief-template.md"]
     WRITEBRIEF --> TRIAGE{"You triage each finding<br/>that cleared the gate"}
     TRIAGE -->|out of scope| DEFERRED[("&lt;run&gt;/deferred.md<br/>write-only backlog.<br/>Never posted, never read by a later run")]
@@ -222,7 +222,10 @@ What remains is a write into the **main** tree:
 - Resolve every touched path with `readlink -f` (or `cd "$(dirname …)" && pwd -P`) before
   comparing, so a symlink pointing out of the allowed area is caught by its existence.
 - Anything resolving outside `.guardtower/` **HALTS the run**: surface the offending paths and
-  their diff to the user and stop. The worktree is still removed.
+  **the reconciliation diff of those paths** — what a subagent changed in them between the snapshot
+  and the re-measure — to the user, and stop. That is not the PR diff, which rule two keeps out of
+  the conductor's context regardless; it is the evidence of the violation, and it is confined to
+  the paths the comparison just named. The worktree is still removed.
 
 **Never auto-revert.** Reverting is destructive and cannot distinguish a bug worth diagnosing from
 evidence the user needs intact.

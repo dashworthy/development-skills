@@ -20,9 +20,12 @@
 # 3. A transient API failure (429/5xx/529, "please run /login") must never be reported as "the
 #    plugin is broken" - see classify_claude_failure - but 429/overloaded/rate-limit language is
 #    also standard GitHub/GitLab CLI vocabulary, not Anthropic-exclusive. Since this scratch repo
-#    has no remote at all, ANY forge-tool marker in the output is itself evidence of the
-#    regression this test exists to catch, and wins over any rate-limit/5xx token appearing
-#    alongside it.
+#    has no remote at all, a `gh:`/`glab:`/`fatal: unable to access` CLI-error-shaped prefix in
+#    the output is itself evidence of the regression this test exists to catch, and wins over any
+#    rate-limit/5xx token appearing alongside it. The marker set stops at those three prefixes on
+#    purpose: `commands/review.md` itself narrates "GitHub pull request", "GitLab merge request",
+#    and github.com/gitlab.com example URLs, so a broader marker set (tried and reverted) matched
+#    normal passing narration too, misclassifying a real Anthropic outage as `behavior` instead.
 # 4. The one check most likely to depend on single-turn model narration completing within one
 #    non-interactive `-p` call (check 2, "stops cleanly with no forge remote") is retried with
 #    quorum rather than graded on a single attempt - see run_with_quorum below for why that is
@@ -126,17 +129,32 @@ run_limited() {
 # GitHub/GitLab CLI vocabulary too - `gh: API rate limit exceeded...`, `glab: 429 Too Many
 # Requests`, `gh: You have exceeded a secondary rate limit` all classified `api` under a
 # token-list-only test, which hides exactly the regression this check exists to catch: if a
-# forge-detection-ordering bug lets the conductor call gh/glab (or git hits a forge host) BEFORE
-# confirming there is no remote, and that real call hits a genuine rate limit or 5xx, a
-# token-only classifier grades it inconclusive instead of FAIL.
+# forge-detection-ordering bug lets the conductor call gh/glab (or a `git` command hits a forge
+# host) BEFORE confirming there is no remote, and that real call hits a genuine rate limit or
+# 5xx, a token-only classifier grades it inconclusive instead of FAIL.
 #
 # The property that makes this decidable: this scratch repo has no remote at all - that is the
 # whole point of the test case - so guardtower must never reach a forge here, full stop. Any
 # output bearing a forge-tool marker is therefore itself evidence of the behavioral regression,
 # regardless of which rate-limit/5xx token happens to also appear in the same text - so the marker
 # check runs FIRST and wins outright. Only when no forge marker is present do the remaining tokens
-# get treated as evidence of a genuine Anthropic-side outage. `\bgit\b` is word-bounded on purpose
-# (verified: does not match "digit"/"legitimate"/"gitlab", does match a standalone "git" word).
+# get treated as evidence of a genuine Anthropic-side outage.
+#
+# The marker set is deliberately narrow: `gh:`, `glab:`, and `fatal: unable to access` are
+# CLI-ERROR-SHAPED PREFIXES those specific tools emit when a real call fails - not phrases a model
+# narrates. An earlier, broader version of this list also matched `github\.com`, `gitlab\.com`,
+# `merge request`, `pull request`, and a bare `\bgit\b` word - and that broke the OTHER direction:
+# `commands/review.md` itself says "Review a GitHub pull request or GitLab merge request" and
+# embeds literal github.com/gitlab.com example URLs, so a headless session narrating its own
+# command definition back (`I will review the pull request now...`, `...merge request...`) hit
+# those markers on completely normal, passing turns that merely happened to co-occur with a real
+# Anthropic-side 429/529 - misclassifying a transient outage as `behavior`, which under quorum can
+# accumulate into a false FAIL. The asymmetry that makes the narrow set safe: a real forge call
+# that fails WILL carry a `gh:`/`glab:`/`fatal:` prefix, because that is how those tools report
+# errors - narration never does. Proven against both directions in the fix report: the reviewer's
+# four real forge-error strings (`gh: ...`, `glab: ...`, `fatal: unable to access ...`) still
+# classify `behavior`; narration that merely mentions "pull request"/"merge request"/github.com/
+# gitlab.com/git alongside a real outage token now correctly classifies `api`.
 #
 # A run_limited timeout (124) is always classified as a timeout, independent of any of this - and
 # the `[ "$st" -ne 0 ]` guard means a zero-exit (successful) session is never downgraded by either
@@ -148,7 +166,7 @@ classify_claude_failure() {  # classify_claude_failure <exit_status> <output_tex
     return
   fi
   if [ "$st" -ne 0 ]; then
-    if printf '%s' "$txt" | grep -qiE 'gh:|glab:|fatal: unable to access|github\.com|gitlab\.com|merge request|pull request|\bgit\b'; then
+    if printf '%s' "$txt" | grep -qiE 'gh:|glab:|fatal: unable to access'; then
       printf 'behavior\n'
       return
     fi

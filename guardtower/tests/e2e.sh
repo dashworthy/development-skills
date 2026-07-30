@@ -9,18 +9,20 @@
 #    ~/.claude/plugins/ (known_marketplaces.json, installed_plugins.json) - a single,
 #    user-home-scoped registry, NOT anything confined to $TMP. A test script must never remove -
 #    or silently repoint - a marketplace registration it did not itself create in this run. See
-#    the ownership snapshot below: if "dashworthy" (or guardtower@dashworthy) is already present
-#    before this script does anything, it is treated as real and untouchable, and the whole test
-#    is skipped rather than risk it.
+#    detect_state and the ownership snapshot below: detection is three-state (absent/present/
+#    unknown), not a boolean, because a TRANSIENT FAILURE of the detection command itself must
+#    never be treated the same as a confirmed-empty registry - both "present" and "unknown" mean
+#    "do not touch," and the whole test is skipped rather than risk it.
 # 2. Nothing may bound a `claude -p` call that never returns. A child that traps or ignores
 #    SIGTERM (or is itself blocked inside a graceful-shutdown path on the same stuck network call)
 #    must still be dead at roughly the limit plus a short grace period, not run to its own natural
 #    end - see run_limited's TERM-then-KILL escalation below.
 # 3. A transient API failure (429/5xx/529, "please run /login") must never be reported as "the
-#    plugin is broken" - see classify_claude_failure - but the token list must not be so broad
-#    that it can also match guardtower's OWN networking (a real forge-detection-ordering
-#    regression that gets as far as its own failing git/gh/glab call), which would hide a real
-#    defect behind "inconclusive."
+#    plugin is broken" - see classify_claude_failure - but 429/overloaded/rate-limit language is
+#    also standard GitHub/GitLab CLI vocabulary, not Anthropic-exclusive. Since this scratch repo
+#    has no remote at all, ANY forge-tool marker in the output is itself evidence of the
+#    regression this test exists to catch, and wins over any rate-limit/5xx token appearing
+#    alongside it.
 # 4. The one check most likely to depend on single-turn model narration completing within one
 #    non-interactive `-p` call (check 2, "stops cleanly with no forge remote") is retried with
 #    quorum rather than graded on a single attempt - see run_with_quorum below for why that is
@@ -118,25 +120,42 @@ run_limited() {
 }
 
 # Distinguish "the model API failed us" from "the plugin behaved wrongly," so a transient
-# 429/5xx/529 is never reported as a behavioral regression. Narrowly scoped on purpose: an earlier
-# version also matched ETIMEDOUT/ECONNRESET/"fetch failed"/"network error"/"internal server
-# error"/"service unavailable", every one of which guardtower's OWN networking (its git fetch, or
-# the gh/glab calls posting-review-comments and the conductor's forge detection shell out to)
-# could equally produce - meaning a real ordering regression that gets far enough to hit its own
-# failing network call would have been graded INCONCLUSIVE instead of FAIL. Hiding a failure is
-# worse than the defect this classification exists to prevent, so the list here is limited to
-# signatures that can only come from the Anthropic API / claude CLI session itself: rate limiting,
-# "overloaded", the specific 429/500/503/529 status codes, and an expired CLI session. A
-# run_limited timeout (124) is always classified as a timeout, independent of this list.
+# 429/5xx/529 is never reported as a behavioral regression. Narrowing the token list to
+# Anthropic-only signatures (rate limiting, "overloaded", 429/500/503/529, an expired CLI session)
+# turned out not to be enough on its own: 429, "overloaded", and rate-limit language are standard
+# GitHub/GitLab CLI vocabulary too - `gh: API rate limit exceeded...`, `glab: 429 Too Many
+# Requests`, `gh: You have exceeded a secondary rate limit` all classified `api` under a
+# token-list-only test, which hides exactly the regression this check exists to catch: if a
+# forge-detection-ordering bug lets the conductor call gh/glab (or git hits a forge host) BEFORE
+# confirming there is no remote, and that real call hits a genuine rate limit or 5xx, a
+# token-only classifier grades it inconclusive instead of FAIL.
+#
+# The property that makes this decidable: this scratch repo has no remote at all - that is the
+# whole point of the test case - so guardtower must never reach a forge here, full stop. Any
+# output bearing a forge-tool marker is therefore itself evidence of the behavioral regression,
+# regardless of which rate-limit/5xx token happens to also appear in the same text - so the marker
+# check runs FIRST and wins outright. Only when no forge marker is present do the remaining tokens
+# get treated as evidence of a genuine Anthropic-side outage. `\bgit\b` is word-bounded on purpose
+# (verified: does not match "digit"/"legitimate"/"gitlab", does match a standalone "git" word).
+#
+# A run_limited timeout (124) is always classified as a timeout, independent of any of this - and
+# the `[ "$st" -ne 0 ]` guard means a zero-exit (successful) session is never downgraded by either
+# list, regardless of what its text happens to mention.
 classify_claude_failure() {  # classify_claude_failure <exit_status> <output_text>
   st=$1; txt=$2
   if [ "$st" -eq 124 ]; then
     printf 'timeout\n'
     return
   fi
-  if [ "$st" -ne 0 ] && printf '%s' "$txt" | grep -qiE '(^|[^0-9])(429|500|503|529)([^0-9]|$)|overloaded|rate.?limit|please run /login'; then
-    printf 'api\n'
-    return
+  if [ "$st" -ne 0 ]; then
+    if printf '%s' "$txt" | grep -qiE 'gh:|glab:|fatal: unable to access|github\.com|gitlab\.com|merge request|pull request|\bgit\b'; then
+      printf 'behavior\n'
+      return
+    fi
+    if printf '%s' "$txt" | grep -qiE '(^|[^0-9])(429|500|503|529)([^0-9]|$)|overloaded|rate.?limit|please run /login'; then
+      printf 'api\n'
+      return
+    fi
   fi
   printf 'behavior\n'
 }
@@ -194,32 +213,60 @@ run_with_quorum() {  # run_with_quorum <ok_grep_pattern> <claude-arg>...
 
 cleanup() {
   [ -d "$TMP/proj" ] && cd "$TMP/proj" 2>/dev/null
-  # Only remove what THIS run added - see the ownership snapshot below. Never gated on the cd
-  # above succeeding: the registry these act on is user-scoped, not path-scoped, so a failed
-  # mkdir/cd must not also skip the cleanup that corresponds to whatever this run did add.
-  [ "$plugin_preexisted" = 0 ] && claude plugin uninstall guardtower@dashworthy --scope local >/dev/null 2>&1
-  [ "$marketplace_preexisted" = 0 ] && claude plugin marketplace remove dashworthy >/dev/null 2>&1
+  # Only remove when the state is "absent" - see the ownership snapshot below. "unknown" (the
+  # detection command itself failed) must behave exactly like "present": touch nothing. Never
+  # gated on the cd above succeeding: the registry these act on is user-scoped, not path-scoped,
+  # so a failed mkdir/cd must not also skip the cleanup that corresponds to whatever this run did
+  # add.
+  [ "$plugin_state" = "absent" ] && claude plugin uninstall guardtower@dashworthy --scope local >/dev/null 2>&1
+  [ "$marketplace_state" = "absent" ] && claude plugin marketplace remove dashworthy >/dev/null 2>&1
   cd / && rm -rf "$TMP"
 }
 trap cleanup EXIT
 
-# Ownership snapshot - taken before this script does ANYTHING else, so "preexisted" unambiguously
-# means "was here before this run touched the system." There is no way to distinguish a leak from
-# a previous crashed run of this exact script from a real, permanent user registration by
-# inspection alone - both look identical - so the only safe rule is: if it's already there, this
-# run did not create it, and will not remove or repoint it, ever, no matter how the run ends. That
-# does mean a genuine leak from an earlier crash does not self-heal; that is the correct trade,
-# since the alternative is a test script that can silently delete or overwrite real configuration.
-marketplace_preexisted=0
-plugin_preexisted=0
-claude plugin marketplace list 2>/dev/null | grep -q 'dashworthy' && marketplace_preexisted=1
-claude plugin list 2>/dev/null | grep -q 'guardtower@dashworthy' && plugin_preexisted=1
+# Detects whether something is present, three-state: "absent", "present", or "unknown". A prior
+# version used a two-state boolean that defaulted to "not present" and only flipped on a
+# successful match, so a TRANSIENT FAILURE of the detection command itself (`claude plugin
+# marketplace list` / `claude plugin list` exiting non-zero, no usable stdout) silently fell
+# through to the same "safe to remove" state as a genuinely empty registry - an empty match from a
+# failed command and an empty match from a real empty registry are indistinguishable by grep alone,
+# and conflating them is exactly the fail-open bug: given this build's documented API instability,
+# a transient failure of a `claude` subcommand is not a hypothetical, and the old code would have
+# let cleanup() delete a real, present registration whenever detection itself glitched. Fixed by
+# distinguishing on the command's own EXIT STATUS, not on whether its output happened to contain a
+# substring: only a command that exits 0 gets to say "absent" or "present" at all; a non-zero exit
+# says only "unknown," and unknown is handled identically to present everywhere below.
+detect_state() {  # detect_state <grep_pattern> <command> <arg>...
+  pattern=$1; shift
+  if ds_out=$("$@" 2>/dev/null); then
+    if printf '%s' "$ds_out" | grep -q "$pattern"; then
+      printf 'present\n'
+    else
+      printf 'absent\n'
+    fi
+  else
+    printf 'unknown\n'
+  fi
+}
 
-if [ "$marketplace_preexisted" = 1 ] || [ "$plugin_preexisted" = 1 ]; then
-  printf 'NOTE - a "dashworthy" marketplace and/or guardtower@dashworthy plugin is ALREADY present on this machine.\n'
-  printf 'NOTE - this is indistinguishable from a real, permanent user registration, so e2e.sh will not add,\n'
-  printf 'NOTE - install, remove, or otherwise touch it. Skipping the live install/uninstall test entirely.\n'
-  printf '\nINCONCLUSIVE - pre-existing dashworthy registration; this run does not confirm a regression.\n'
+# Ownership snapshot - taken before this script does ANYTHING else, so "absent" unambiguously
+# means "confirmed not here before this run touched the system," not merely "we didn't see it."
+# There is no way to distinguish a leak from a previous crashed run of this exact script from a
+# real, permanent user registration by inspection alone - both look identical - so the only safe
+# rule is: unless BOTH detections positively confirm absence, this run did not create what's (or
+# might be) there, and will not remove or repoint it, ever, no matter how the run ends. That does
+# mean a genuine leak from an earlier crash does not self-heal; that is the correct trade, since
+# the alternative is a test script that can silently delete or overwrite real configuration.
+marketplace_state=$(detect_state 'dashworthy' claude plugin marketplace list)
+plugin_state=$(detect_state 'guardtower@dashworthy' claude plugin list)
+
+if [ "$marketplace_state" != "absent" ] || [ "$plugin_state" != "absent" ]; then
+  printf 'NOTE - marketplace "dashworthy" state: %s. plugin guardtower@dashworthy state: %s.\n' "$marketplace_state" "$plugin_state"
+  printf 'NOTE - "present" and "unknown" (the detection command itself failed - e.g. a transient CLI/API\n'
+  printf 'NOTE - error) are both treated as "do not touch": e2e.sh will not add, install, remove, or\n'
+  printf 'NOTE - otherwise touch either one. If either state above is "unknown," check by hand:\n'
+  printf 'NOTE - `claude plugin marketplace list` and `claude plugin list`.\n'
+  printf '\nINCONCLUSIVE - could not safely confirm dashworthy/guardtower@dashworthy is clear; this run does not confirm a regression.\n'
   exit 2
 fi
 

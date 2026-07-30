@@ -292,8 +292,25 @@ mkdir -p "$TMP/proj" && cd "$TMP/proj" && git init -q
 git config user.email t@example.com && git config user.name t
 echo hello > a.txt && git add a.txt && git commit -qm init
 
-claude plugin marketplace add "$ROOT" --scope local >/dev/null 2>&1
-claude plugin install guardtower@dashworthy --scope local >/dev/null 2>&1
+# Installing is infrastructure, not behavior. If either of these fails - a network blip, a changed
+# `claude plugin` interface, a malformed marketplace.json - then every check below fails for a
+# reason that has nothing to do with the plugin's behavior, and the first one reports as
+# "FAIL - command is discoverable after install": an infrastructure error misattributed as a
+# behavioral regression, which is the exact confusion the three-state grading everywhere else in
+# this script exists to prevent. Their exit status was previously discarded (`>/dev/null 2>&1` with
+# no test), so that misattribution was silent. Grade a non-zero exit INCONCLUSIVE (2) instead, and
+# print the output rather than swallowing it, so the reason is on the log. `trap cleanup EXIT` is
+# already installed above, so exiting here still uninstalls/removes whatever this run did add.
+if ! install_out=$(claude plugin marketplace add "$ROOT" --scope local 2>&1); then
+  printf 'NOTE - `claude plugin marketplace add` exited non-zero:\n%s\n' "$install_out"
+  printf '\nINCONCLUSIVE - could not add the dashworthy marketplace; no check below can reach a behavioral result, so this run does not confirm a regression.\n'
+  exit 2
+fi
+if ! install_out=$(claude plugin install guardtower@dashworthy --scope local 2>&1); then
+  printf 'NOTE - `claude plugin install guardtower@dashworthy` exited non-zero:\n%s\n' "$install_out"
+  printf '\nINCONCLUSIVE - could not install guardtower@dashworthy; no check below can reach a behavioral result, so this run does not confirm a regression.\n'
+  exit 2
+fi
 
 # 1. The command must be discoverable.
 run_with_quorum 'review' \

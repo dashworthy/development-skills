@@ -33,7 +33,7 @@ Each plugin's own README carries its process-flow diagram and — in both cases 
 ## Repository layout
 
 ```
-development-skills/
+marketplace/
 ├── .claude-plugin/marketplace.json   the dashworthy marketplace
 ├── signal/                           one plugin
 │   └── .claude-plugin/plugin.json

@@ -324,6 +324,16 @@ if [ -s "$C" ]; then
     && grep_flat "$C" '"lenses_run": ["<lens>", "..."] }'
   check $? "conductor: the arbitrator dispatch payload carries threshold and lenses_run"
 
+  # …and the remaining four, anchored as ONE contiguous span rather than per field. Per-field
+  # clauses were tried first and two of them did not bind: `"base_sha": "<from preflight step 3>",`
+  # and the `head_sha` line are byte-identical to lines in the POSTER payload block further down,
+  # so deleting them from the arbitrator block left a matching copy behind and the suite stayed
+  # green. The span starts at `finding_paths`, which appears in no other block, so removing any
+  # field in it breaks the match. The cost is that a failure names the block rather than the field;
+  # the comment above says which fields are load-bearing and why, which is what a reader needs.
+  grep_flat "$C" '"finding_paths": ["<each dispatched analyst'"'"'s output_path>"], "worktree": "<absolute path from preflight step 5>", "base_sha": "<from preflight step 3>", "head_sha": "<from preflight step 3>", "threshold": "<the value agreed in preflight step 8>", "lenses_run": ["<lens>", "..."]'
+  check $? "conductor: the arbitrator dispatch payload carries all six fields"
+
   # `repo` was the one poster-payload field with a shape but no source: no preflight step produced
   # it, since step 1 read the origin URL only to detect the forge and step 3's `gh pr view` does
   # not request it. Anchored to the sentence in step 1 that makes the origin URL its provenance.

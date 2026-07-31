@@ -29,7 +29,9 @@ One dispatch per run:
   "base_sha": "<PR base sha>",
   "head_sha": "<PR head sha>",
   "changed_paths": ["<repo-relative path>", ...],
-  "output_path": "<absolute path to .guardtower/<run>/findings/security.json>"
+  "output_path": "<absolute path to .guardtower/<run>/findings/security.json>",
+  "skill_path": "<absolute path to the SKILL.md this dispatch names>",
+  "schema_path": "<absolute path to finding-schema.md>"
 }
 ```
 
@@ -48,6 +50,16 @@ Every path in this brief, and every path you read or search, resolves **inside `
 never the user's checked-out tree. `changed_paths` describes the code at `head_sha` inside that
 worktree, and so does every manifest, lock file and source file you open; nothing you touch exists
 anywhere else.
+
+`skill_path` is this document and `schema_path` is the finding contract you write to — open the
+contract before you write anything, because the arbitrator drops a finding for a field you did not
+know it wanted. They are paths in the brief rather than links in this file because a dispatched
+subagent cannot resolve a relative citation from a directory it was never told it is standing in.
+
+The worktree also carries the repository's **installed dependency tree** — `vendor/`,
+`node_modules/`, whichever this ecosystem uses — linked in by the conductor, because a detached
+worktree would otherwise have none of it. An installed package's source is a file you can open and
+quote, not a black box you have to avoid asserting anything about.
 
 ## What counts as a finding here
 
@@ -133,7 +145,7 @@ Write exactly this shape to `output_path`:
       "rationale": "<what breaks, for whom, and how they find out>",
       "proposal": "<what to do instead — prose, never a patch>",
       "in_diff": true,
-      "also_at": ["<file:line>"]
+      "also_at": ["<file:line, or file:start-end>"]
     }
   ]
 }

@@ -29,6 +29,7 @@
 - **Composite:** {{COMPOSITE}} (value {{VALUE}} / urgency {{URGENCY}})
 - **In diff:** {{IN_DIFF}}
 - **Also at:** {{ALSO_AT}}
+- **Corroborated by:** {{CORROBORATED_BY}}
 - **Claim:** {{CLAIM}}
 - **Rationale:** {{RATIONALE}}
 - **Proposal:** {{PROPOSAL}}
@@ -44,6 +45,14 @@
 <!-- not, comma-joined. An extract finding usually spans several files and TARGET_FILE names -->
 <!-- only the clearest of them, so dropping ALSO_AT reports one occurrence of a problem found in -->
 <!-- five. -->
+
+<!-- The Corroborated by line exists only on a finding whose corroborated_by array is non-empty, -->
+<!-- and renders one "<lens> (<id>): <claim>" per entry, comma-joined. Those are the other lenses -->
+<!-- that independently found this same defect at the same evidence span; the arbitrator folded -->
+<!-- them into this entry instead of ranking one defect twice. Rendering it is the whole point of -->
+<!-- deduping rather than discarding: a defect three lenses found independently is stronger -->
+<!-- evidence than one lens's opinion, and a brief that drops the line reports the weaker claim -->
+<!-- while looking identical to a finding nothing corroborates. -->
 
 <!-- The Kind line exists on every reuse finding, whatever its kind — omit it only for a finding -->
 <!-- from another lens. Tier and Existing solution exist on a reuse finding whose kind is -->

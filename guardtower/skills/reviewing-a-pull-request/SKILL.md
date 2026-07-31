@@ -62,9 +62,36 @@ branch:
    the run stops anyway, because reconciliation cannot tell a harmless worktree from a real
    violation by path alone. `mktemp -d` puts it out of reach of that test entirely, which is why
    it is the instruction rather than "pick a path under `.guardtower/`". See **Reconcile**.
-3. Analysts read **inside that worktree** — the diff, and every manifest, config file or source
-   file they open to answer a question. The `<base-sha>...<head-sha>` diff is computed there too.
-4. Remove the worktree at the end of the run, on every exit path including a halt — see
+3. **Link the repository's dependency tree into it.** `git worktree add --detach` produces a
+   clean checkout, so every gitignored dependency directory is simply absent — `vendor/` for
+   Composer, `node_modules/` for npm, `.venv/` for pip, a vendored Go tree, whatever this
+   ecosystem installs into. Symlink each one that exists in the main checkout into the worktree,
+   before dispatching anything:
+
+   ```sh
+   for dep in vendor node_modules .venv .bundle target Pods; do
+     [ -e "$MAIN/$dep" ] && [ ! -e "$WORKTREE/$dep" ] && ln -s "$MAIN/$dep" "$WORKTREE/$dep"
+   done
+   ```
+
+   **Without this, two lenses silently shrink.** On the first live run the security analyst
+   reported that whether a `crypted_string` column type and an encoder service existed at all was
+   "all vendor-resident. I resolved this by not asserting anything that depended on vendor
+   behavior, which cost at least one candidate finding" — a lens that quietly reviews less than it
+   was asked to. The reuse lens is worse off: its red flag *a finding whose `existing_solution` you
+   have not opened and read* is unsatisfiable by construction when the existing solution lives in
+   an installed package, and 3 of that run's 4 reuse findings cited one, so an arbitrator applying
+   the rule as written would have dropped all three.
+
+   Read-only reuse of the main checkout's dependency tree is safe: nothing in a run writes through
+   the link. Every analyst and the arbitrator are read-only by instruction, the conductor creates
+   the link rather than they, and **Reconcile** measures the main tree by path — which the link
+   points into but nothing modifies. The links live inside the temp worktree, so `git worktree
+   remove --force` takes them with it, and removing a symlink never touches what it points at.
+4. Analysts read **inside that worktree** — the diff, and every manifest, config file, source file
+   or installed package they open to answer a question. The `<base-sha>...<head-sha>` diff is
+   computed there too.
+5. Remove the worktree at the end of the run, on every exit path including a halt — see
    **Cleanup**.
 
 Your branch, your index, and your uncommitted work are untouched for the whole run. An analyst
@@ -73,18 +100,69 @@ it. And reconciliation therefore only has to watch the **main** tree — see **R
 
 ### Steps
 
+**Every step below runs with the working directory inside the repository under review** — the
+checkout whose `origin` is the forge hosting this PR, never the directory guardtower happened to be
+invoked from. On the first live run the conductor's own cwd was the *plugin* repo, where
+`git remote get-url origin` returns a different remote entirely, so step 1 would have detected the
+wrong forge and step 3 resolved the wrong project, both without erroring. `.guardtower/<run>/` is
+rooted at that same repository's root, for the same reason: it is the tree **Reconcile** measures,
+and an artifact root anywhere else puts every write this run makes outside the only check there is.
+
 1. **Detect the forge** from `git remote get-url origin`. `github.com` → `gh`; `gitlab.*` →
-   `glab`. Self-hosted or ambiguous → ask the user, do not guess. **Keep the path portion of that
-   same URL**: it is the only place `repo` comes from — `owner/repo` on GitHub, the full project
-   path (`group/subgroup/project`, or the numeric project id) on GitLab. Nothing later in preflight
-   produces it; step 3's `gh pr view` is not asked for it, so a run that discards the origin URL
-   after the forge check has to go back for it at **Post**.
-2. **Verify the CLI** is present and authenticated — `gh auth status` or `glab auth status`.
-   Missing or unauthenticated → name the tool, say how to fix it, and stop. This mirrors verity's
-   stance on a missing `jq`: a fixable local problem is not a reason to quietly deliver less.
-3. **Resolve the PR/MR** — base sha, head sha, and changed paths — with `gh pr view <n> --json baseRefOid,headRefOid,files`
-   (GitHub) or `glab mr view <n>` (GitLab). **Paths only**; the conductor never reads diff
-   contents.
+   `glab`. Self-hosted or ambiguous → ask the user, do not guess. **Keep two parts of that same
+   URL.** The path portion is the only place `repo` comes from — `owner/repo` on GitHub, the full
+   project path (`group/subgroup/project`, or the numeric project id) on GitLab. Nothing later in
+   preflight produces it; step 3's `gh pr view` is not asked for it, so a run that discards the
+   origin URL after the forge check has to go back for it at **Post**. The **host** portion is what
+   `glab` needs on a self-hosted GitLab — export it as `GITLAB_HOST` before any `glab` call,
+   including step 2's:
+
+   ```sh
+   ORIGIN=$(git remote get-url origin)
+   export GITLAB_HOST=$(printf '%s' "$ORIGIN" | sed -e 's|^[a-z+]*://||' -e 's|^[^@]*@||' -e 's|[:/].*$||')
+   ```
+
+   Unset, every `glab` call targets gitlab.com — so `glab auth status` asks about a host the user
+   has no account on, reports unauthenticated, and **preflight halts on a correctly-configured
+   machine.** Self-hosted GitLab is the common enterprise case, not an edge one.
+2. **Verify the CLI** is present and authenticated — `gh auth status` or `glab auth status`, the
+   latter with `GITLAB_HOST` already exported per step 1. Missing or unauthenticated → name the
+   tool, say how to fix it, and stop. This mirrors verity's stance on a missing `jq`: a fixable
+   local problem is not a reason to quietly deliver less.
+3. **Resolve the PR/MR** — base sha, head sha, **start sha**, and changed paths. **Paths only**;
+   the conductor never reads diff contents.
+
+   ```sh
+   # GitHub: named fields only. A bare `gh pr view <n>` prints the whole description.
+   gh pr view <n> --json baseRefOid,headRefOid,files
+
+   # GitLab: the MR object's `diff_refs` carries base_sha, start_sha and head_sha together.
+   # Pipe the response through a field extractor so only the shas reach this context.
+   glab api "projects/$ENC_REPO/merge_requests/<n>" \
+     | python3 -c 'import json,sys; r=json.load(sys.stdin)["diff_refs"]; print(r["base_sha"], r["start_sha"], r["head_sha"])'
+
+   # Changed paths, once step 5 has fetched the head ref — both commits must be present locally.
+   git diff --name-only "$BASE_SHA...$HEAD_SHA"
+   ```
+
+   `$ENC_REPO` is `repo` URL-encoded — every `/` becomes `%2F`, so `oro/wastequip` is
+   `oro%2Fwastequip`. **`glab mr view <n>` is not the command for this step**: it returns title,
+   state, author, labels, url and a comment count, and none of the three shas or the changed
+   paths.
+
+   **`start_sha` comes from `diff_refs`, and it is not `base_sha`.** Measured on the first live
+   run: `base_sha e2c4753`, `start_sha cdc22db` — different values, and `start_sha` changed on
+   every push, seven diff versions on that one merge request. GitLab validates an inline comment's
+   position triple against a stored diff version, so a position built with `start_sha` set to
+   `base_sha` matches no version at all and every inline comment is rejected. Carry all three shas
+   to **Post**.
+
+   **The MR title and description must not enter this context.** `glab mr view <n>` prints the
+   entire description — roughly 2,500 words of architecture narrative on the live MR — into the
+   very step that says the conductor never reads diff contents. It is not a diff, but it is
+   substantive prose about the code under review, written to persuade, and reading it primes every
+   downstream judgement the conductor is supposed to make on the arbitrator's numbers alone.
+   Request the fields you need and nothing else.
 4. **Stop if nothing reviewable changed.** Say so plainly and exit.
 5. **Fetch and add the detached worktree**, per **The worktree** above.
 6. **Snapshot the main tree** — `git diff --numstat HEAD` and `git status --porcelain` — before
@@ -125,9 +203,19 @@ One analyst per selected lens, dispatched **in parallel**, per
   "base_sha":      "<PR base sha>",
   "head_sha":      "<PR head sha>",
   "changed_paths": ["<repo-relative path>", ...],
-  "output_path":   "<absolute path to .guardtower/<run>/findings/<lens>.json>"
+  "output_path":   "<absolute path to .guardtower/<run>/findings/<lens>.json>",
+  "skill_path":    "<absolute path to the SKILL.md this dispatch names>",
+  "schema_path":   "<absolute path to finding-schema.md>"
 }
 ```
+
+Name every field here too. `skill_path` and `schema_path` are the two the brief used to leave a
+dispatched analyst to guess: it carried a `lens` and no path to that lens's own SKILL.md, and it
+told the analyst to write "the shape `finding-schema.md` defines" without saying where that
+document is. The first live run's conductor patched both in as prose at dispatch time — a fix that
+works once and is gone the next run, which is what a payload field exists to prevent. An analyst
+that cannot open the contract writes to a shape it reconstructed from memory, and the arbitrator
+drops findings for missing fields nobody ever showed it.
 
 Each analyst reads the diff and whatever files it needs from the worktree, writes its findings to
 `output_path` in the shape `references/finding-schema.md` defines, and returns **only a receipt**:
@@ -147,7 +235,9 @@ payload:
   "base_sha":      "<from preflight step 3>",
   "head_sha":      "<from preflight step 3>",
   "threshold":     "<the value agreed in preflight step 7>",
-  "lenses_run":    ["<lens>", "..."]
+  "lenses_run":    ["<lens>", "..."],
+  "skill_path":    "<absolute path to the SKILL.md this dispatch names>",
+  "schema_path":   "<absolute path to finding-schema.md>"
 }
 ```
 
@@ -162,13 +252,21 @@ verdict it never actually verified. `base_sha` and `head_sha` fix the revision v
 against, and `lenses_run` is the sanity check that `finding_paths` holds exactly one entry per lens
 actually dispatched. A conductor that hands over only the paths is telling the arbitrator to
 consult five fields it was never given — the same gap the poster's dispatch had before **Post**
-spelled its payload out.
+spelled its payload out. `skill_path` and `schema_path` close the same hole the analyst brief had:
+the arbitrator is told to score against `scoring-rubric.md` and to read findings written to
+`finding-schema.md`'s shape, and a subagent cannot resolve a relative citation from a directory it
+was never told it is standing in. `schema_path` locates both — the rubric is its sibling in the
+same `references/` directory.
 
 It reads the finding files itself, verifies each one's evidence against the worktree at the head
 sha, scores and gates what holds per `references/scoring-rubric.md`, and returns exactly three
 things — the items that cleared the threshold, the dropped list with each item's one-line reason
 its evidence didn't hold, and the discarded entries that were verified but scored below the
-threshold — and nothing else. This is the one return value **Context discipline**
+threshold — and nothing else. A passed item may carry `corroborated_by`: the other lenses that
+found the same defect at the same evidence span, folded into it by the arbitrator's dedup step
+rather than reported twice. Render it into `brief.md` — a defect three lenses independently found
+is stronger evidence than one lens's opinion, and dropping the corroboration on the floor at the
+render step throws away exactly the signal dedup was added to preserve. This is the one return value **Context discipline**
 names as the permitted exception. It is also the only source for `brief.md`'s summary counts and
 for **Reporting, always** below: the conductor cannot re-derive a dropped or discarded count from
 anywhere else without reading a finding file itself, which rule two forbids.
@@ -227,9 +325,11 @@ Dispatch `posting-review-comments` with this payload:
   "repo": "<owner/repo, or GitLab project id/path — from the origin URL, preflight step 1>",
   "base_sha": "<from preflight step 3>",
   "head_sha": "<from preflight step 3>",
+  "start_sha": "<from preflight step 3 — GitLab's diff-version anchor, never base_sha>",
   "run_id": "<this run's id>",
   "lenses_run": ["<lens>", "..."],
   "lenses_skipped": ["<lens>", "..."],
+  "skill_path": "<absolute path to the SKILL.md this dispatch names>",
   "approved": ["<the in-scope subset of the arbitrator's passed array>"]
 }
 ```
@@ -239,6 +339,16 @@ alongside `head_sha` to anchor a diff position, and `run_id`, `lenses_run` and `
 what let the summary comment name the run and admit which lenses were skipped. A poster handed only
 the approved set is told by its own instructions to consult fields it was never given — the same
 gap the arbitrator's dispatch had before **The pass** spelled its payload out.
+
+**`start_sha` is the third of GitLab's three and the one nothing else can supply.** The position
+triple is validated against a stored diff version; `start_sha` is not `base_sha` (measured live at
+`e2c4753` and `cdc22db` on the same MR) and it changes on every push, so it cannot be derived,
+guessed, or substituted downstream. Leave it out of this payload and the poster has no correct
+value to send, every inline comment is rejected, and the poster's own no-fallback rule then kills
+the whole inline set rather than degrading it — a run that posts nothing inline, from findings the
+user already approved. `skill_path` is here for the reason it is on the other two dispatches: the
+poster resolves the arbitrator's authoritative field list by a relative citation it cannot follow
+without knowing where it stands.
 
 This happens only because guardtower is a PR-only tool to begin with — there is no local-diff mode
 to post from by accident — and only after triage; nothing is dispatched until the user has marked
@@ -266,6 +376,11 @@ Then invoke `superpowers:verification-before-completion` before reporting anythi
 ## Red flags — STOP
 
 - Reading a diff or a finding in the conductor's own context instead of dispatching it.
+- Reading the PR or MR title and description into this context — `glab mr view <n>` does it by
+  default, which is why step 3 does not use it.
+- Running a preflight command anywhere but inside the repository under review.
+- Dispatching an analyst into a worktree whose dependency tree was never linked in.
+- Dispatching the poster without `start_sha`, or with `start_sha` set to `base_sha`.
 - Switching the user's checked-out branch, or running `gh pr checkout`.
 - Posting anything not marked in scope during triage.
 - Auto-reverting a reconciliation violation instead of surfacing it.

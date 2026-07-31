@@ -30,7 +30,9 @@ One dispatch per run:
   "base_sha": "<PR base sha>",
   "head_sha": "<PR head sha>",
   "changed_paths": ["<repo-relative path>", ...],
-  "output_path": "<absolute path to .guardtower/<run>/findings/reuse.json>"
+  "output_path": "<absolute path to .guardtower/<run>/findings/reuse.json>",
+  "skill_path": "<absolute path to the SKILL.md this dispatch names>",
+  "schema_path": "<absolute path to finding-schema.md>"
 }
 ```
 
@@ -55,6 +57,16 @@ Every path in this brief, and every path you read or search, resolves **inside `
 never the user's checked-out tree. `changed_paths` describes the code at `head_sha` inside that
 worktree, and so does every manifest, lock file and source file you open; nothing you touch exists
 anywhere else.
+
+`skill_path` is this document and `schema_path` is the finding contract you write to — open the
+contract before you write anything, because the arbitrator drops a finding for a field you did not
+know it wanted. They are paths in the brief rather than links in this file because a dispatched
+subagent cannot resolve a relative citation from a directory it was never told it is standing in.
+
+The worktree also carries the repository's **installed dependency tree** — `vendor/`,
+`node_modules/`, whichever this ecosystem uses — linked in by the conductor, because a detached
+worktree would otherwise have none of it. An installed package's source is a file you can open and
+quote, not a black box you have to avoid asserting anything about.
 
 ## One observation, two remedies
 
@@ -108,6 +120,16 @@ This is not a finding you sometimes emit — it is a standing burden the lens ca
 unit of code in the diff, whether or not it ends in a finding. Work through the list before you
 write anything else.
 
+**The record has a place to go: the `unanswered` array in your output file.** Write one entry per
+candidate whose question came back empty — the candidate, what you searched and where, what you
+checked in the manifest and lock file, what stdlib or platform APIs you ruled out. It is not a
+finding, it is not scored, and the arbitrator skips it; it exists so that "load-bearing" is
+something the file can actually hold. Do not put it in your receipt, and do not name a null
+candidate in your reply: the first live run had nowhere to put this record and returned its null
+candidates by name to the conductor, breaching the context firewall to satisfy a rule this skill
+had made mandatory and then given no home. A record required to be produced and then structurally
+discarded is a rule that guarantees the breach; the array is the fix.
+
 ## Two tiers
 
 | Tier | What may be cited | Bar |
@@ -155,6 +177,16 @@ read, or a documented signature. A finding whose superseding solution cannot be 
 actually cover the requirement is dropped exactly like any other unverified claim — not scored
 low, dropped. This closes the lens's characteristic failure: a confident "library X already does
 this" where X turns out to do something merely adjacent.
+
+**Open the source wherever there is source to open**, and quote it. The worktree carries the
+installed dependency tree (see **What you receive**), so a package already in the manifest has real
+files in it and "documented signature" is not a licence to skip reading them. The documented-
+signature form is for what genuinely cannot be opened: a language stdlib call, a platform API, or a
+`tier: 2` package that is not installed precisely because installing it is the proposal. Stated
+this way because the flat form of the rule — *never cite an `existing_solution` you have not opened*
+— was **unsatisfiable by construction** on the first live run, where the worktree had no dependency
+tree at all and 3 of this lens's 4 findings cited an installed package; a rule nothing can satisfy
+gets ignored or silently drops good findings, and both happened.
 
 An `extract` finding has no second half of this kind, because there is nothing that already does
 it — that is the branch condition. Its second half is the occurrence list: `also_at`, carrying
@@ -263,13 +295,22 @@ Write exactly this shape to `output_path`:
       "rationale": "<what breaks, for whom, and how they find out>",
       "proposal": "<what to do instead — prose, never a patch>",
       "in_diff": true,
-      "also_at": ["<file:line>"],
+      "also_at": ["<file:line, or file:start-end>"],
 
       "kind": "reimplements | duplicates | diverges | extract",
       "tier": 1,
       "existing_solution": "<repo path, or package + exact export, or stdlib/platform API>",
       "existing_evidence": "<source text or documented signature proving it covers the claim>",
       "adoption_cost": "<tier 2 only: supply-chain surface, maintenance, version churn>"
+    }
+  ],
+
+  "unanswered": [
+    {
+      "candidate": "<the new file, module, class, exported function or utility>",
+      "searched": "<the words you searched for, and the paths you searched>",
+      "manifest_checked": "<the manifest and lock file entries you looked at>",
+      "considered": "<the stdlib and platform APIs you ruled out, and why>"
     }
   ]
 }
@@ -290,6 +331,13 @@ catch it.
 
 `id`, `value`, `urgency`, and `composite` are never yours to set.
 
+**`unanswered` is a sibling of `findings`, not a finding.** It carries **The mandatory question**'s
+null-answer record: one entry per candidate the search came back empty on, whether or not that
+candidate went on to earn an `extract` finding. Write `[]` when every candidate turned up something
+that already solves it. Nothing scores it and nothing gates it — the arbitrator skips the array
+entirely — and that is the point: the record is kept where it can be audited without any of it
+reaching the conductor.
+
 Once `output_path` is written, return exactly one line and nothing else:
 
 ```
@@ -306,8 +354,11 @@ context firewall depends on this file being the only place a finding's content a
 - Writing any file other than `output_path`.
 - Proposing a tier 2 dependency that is not well-established.
 - A tier 2 finding with no `adoption_cost`.
-- A finding whose `existing_solution` you have not opened and read.
+- A finding whose `existing_solution` you have neither opened and read, nor — where it has no
+  source to open at all — cited a documented signature for.
 - Answering the mandatory question with silence instead of a stated search.
+- Keeping the null-answer record out of `unanswered`, or naming a null candidate in your reply
+  instead of writing it there.
 - Proposing a freshly extracted abstraction where the search found something that already solves
   it — existing beats new.
 - Proposing an abstraction for repetition that does not yet exist.

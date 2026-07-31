@@ -25,7 +25,9 @@ One dispatch per run:
   "base_sha": "<PR base sha>",
   "head_sha": "<PR head sha>",
   "threshold": 80,
-  "lenses_run": ["reuse", "security", "smell"]
+  "lenses_run": ["reuse", "security", "smell"],
+  "skill_path": "<absolute path to the SKILL.md this dispatch names>",
+  "schema_path": "<absolute path to finding-schema.md>"
 }
 ```
 
@@ -37,7 +39,19 @@ mismatch yourself — a broken dispatch is a conductor-level bug, not one you ar
 and it is not something to report onward beyond that: the conductor already knows which lenses it
 chose to skip. `worktree` is where `target_file` and `existing_solution` resolve — never the
 user's checked-out tree, and never wherever your own working directory happens to be. `threshold`
-is the gate **Gate and rank** below applies.
+is the gate **Gate and rank** below applies. `schema_path` is the finding contract the files you
+are about to open were written to, and `scoring-rubric.md` — the document **Score against the
+published rubric** sends you to — is its sibling in the same `references/` directory; `skill_path`
+is this document, and it is what every other relative citation here resolves against. A subagent
+cannot follow `../reviewing-a-pull-request/references/scoring-rubric.md` without being told where
+it is standing, and an arbitrator that cannot open the rubric invents criteria, which is the one
+thing **Red flags** forbids outright.
+
+A finding file may also carry an `unanswered` array alongside `findings` — the reuse lens's record
+of the candidates whose mandatory question came back empty, and what it searched to establish that.
+Those are **not findings**: do not verify, score, gate, or return them. They are kept in the file so
+the record survives without entering the conductor's context; see
+`../surveying-for-reuse/SKILL.md`'s Return format.
 
 ## Verify before you score
 
@@ -57,7 +71,14 @@ names.
 **`reimplements`, `duplicates`, `diverges` — the second half is the existing solution.** Also open
 `existing_solution` and confirm `existing_evidence` shows it genuinely covers the claim. A
 superseding solution that turns out to do something merely adjacent — not the same thing, just
-nearby — fails verification exactly like stale evidence: the finding drops. For `tier: 2`,
+nearby — fails verification exactly like stale evidence: the finding drops.
+
+Where `existing_solution` names something with **no file to open** — a language stdlib call, a
+platform API, or a `tier: 2` package that by definition is not installed — verify the **documented
+signature** in `existing_evidence` instead, and do not drop the finding for having no file. That
+allowance is narrow and does not extend to an installed dependency: the conductor links `vendor/`,
+`node_modules/` and their equivalents into the worktree precisely so a package's source is
+openable, so a finding citing one is verified by opening it, as any repo path would be. For `tier: 2`,
 additionally require a non-empty `adoption_cost`; a tier 2 finding that omits it drops as well,
 because a dependency proposed with no stated cost is not a finding you can score.
 
@@ -95,6 +116,46 @@ appear in that lens's file — `security-001`, `security-002`, `reuse-001`. Ids,
 already carrying one, ignore it and assign your own rather than passing it through unchecked —
 see **Red flags** below.
 
+## Dedup across lenses
+
+Three lenses reading the same code sometimes find the same defect and describe it in three
+vocabularies. On the first live run the brief's top two entries — `security-003` at composite 92
+and `smell-006` at 90 — were **one defect**: a migration whose resumability guard keys off a column
+type the DDL in the same file had already changed. A third case had three lenses reporting one
+thing. All of them would have gone to the brief as separate, separately-ranked entries. A reviewer
+who reads the same defect twice under two ids stops trusting the ranking, and the ranking is the
+only thing the gate is built on.
+
+So, after scoring and before the gate:
+
+1. **Group by evidence span.** Two findings belong to the same group when their evidence covers the
+   **same `target_file`** and their line spans **overlap**. `target_line` is often a range —
+   `src/Migration/Schema.php:120-127` — so compare spans, not single numbers: a bare line is a span
+   of one, and two spans overlap when each one's start is at or before the other's end.
+2. **Keep the highest composite.** That finding represents the group and keeps its own `id`,
+   scores, and every field it already carried. A tie breaks by the same total order **Gate and
+   rank** uses, so the choice is reproducible rather than iteration-ordered.
+3. **Fold the others in as corroborating lenses, never silently.** Each remaining member becomes an
+   entry in the representative's `corroborated_by`, carrying its `lens`, `id`, `target_line`, and
+   its `claim` in its own words. A defect three lenses independently found is *stronger* evidence
+   than one lens's opinion, not redundant noise, and the brief and the posted comment both say so —
+   see `../reviewing-a-pull-request/references/brief-template.md`. Folding a member in is neither
+   dropping nor discarding it: its evidence held and it was never measured against the gate on its
+   own, so it appears in neither list.
+4. **Report the group once.** Only the representative enters `passed`.
+
+**What dedup is not.** Two findings in the same file at unrelated lines are **two findings**, however
+close together they sit: a missing authorization check at line 40 and a swallowed exception at line
+300 of the same file are two defects, and merging them hides one behind the other for good, because
+only the representative is ever reported. **Overlap of the evidence spans is the test** — not
+proximity, not a shared file, not a shared theme, and not two claims that merely sound alike. Two
+different `target_file`s are never one group either; a single finding that genuinely spans files
+says so in `also_at`.
+
+Dedup runs after scoring because it needs composites to choose a representative, and before the
+gate because a group must clear the gate once, on its best member's score — never by having one
+defect counted twice on the way through.
+
 ## Gate and rank
 
 Keep every finding whose `composite` is at or above `threshold`; everything below it is discarded,
@@ -104,14 +165,18 @@ not dropped. Sort `passed` by the total order the rubric defines: `composite` de
 over the identical set of surviving findings could render two different briefs — the total order
 closes that gap so they can't.
 
-## Three outcomes, never conflated
+## Four outcomes, never conflated
 
-Every finding you touch ends in exactly one of three states, and they mean different things:
+Every finding you touch ends in exactly one of four states, and they mean different things:
 
 - **`dropped`** — evidence failed. Never scored. Carries `reason`, never `value`, `urgency`, or
   `composite`.
 - **`discarded`** — verified, scored, and `composite` fell short of `threshold`.
 - **`passed`** — verified, scored, and cleared the gate.
+- **`corroborating`** — verified, scored, and folded into another finding's group by **Dedup across
+  lenses**. It is neither dropped nor discarded, and reporting it as either would be a lie in a
+  different direction each time: it reaches the reader as a corroborating lens on the finding that
+  represents its group, inside that finding's `corroborated_by`.
 
 Returning a dropped finding as discarded would tell the user a fabricated claim was merely
 low-priority. What actually happened is its evidence didn't hold at all — a different, more
@@ -133,7 +198,15 @@ Return exactly this shape — never write it to a file, this is your return valu
       "rationale": "<what breaks, for whom, and how they find out>",
       "proposal": "<what to do instead — prose, never a patch>",
       "in_diff": true,
-      "also_at": ["<file:line>"],
+      "also_at": ["<file:line, or file:start-end>"],
+      "corroborated_by": [
+        {
+          "lens": "<the lens that independently found the same defect>",
+          "id": "<that finding's id>",
+          "target_line": "<its evidence span>",
+          "claim": "<its claim, in its own words>"
+        }
+      ],
       "kind": "<reuse lens: reimplements | duplicates | diverges | extract>",
       "tier": 1,
       "existing_solution": "<reuse lens, not on an extract finding>",
@@ -164,8 +237,10 @@ Return exactly this shape — never write it to a file, this is your return valu
 }
 ```
 
-`passed` is sorted by the total order from **Gate and rank**; `dropped` and `discarded` carry no
-required order beyond the order you encountered them in. This return is the one exception
+`corroborated_by` is empty on a finding no other lens corroborated, which is most of them; it is
+populated only by **Dedup across lenses**, and every entry in it is a finding that does *not* appear
+anywhere else in this return. `passed` is sorted by the total order from **Gate and rank**;
+`dropped` and `discarded` carry no required order beyond the order you encountered them in. This return is the one exception
 **Context discipline** in the conductor's `SKILL.md` names: the conductor is permitted, and
 required, to read it — everything it reports and everything it renders into `brief.md` comes from
 these three lists and nothing else.
@@ -181,6 +256,13 @@ these three lists and nothing else.
 - Dropping an `extract` finding for having no `existing_solution`, or scoring one without opening
   the locations in its `also_at`.
 - Inventing scoring criteria instead of applying `scoring-rubric.md` as written.
+- Reporting two findings that cover the same evidence span as two entries in `passed`.
+- Grouping two findings because they sit in the same file, or sound alike — overlap of the evidence
+  spans is the test, not proximity.
+- Silently dropping the lower-scoring member of a group instead of folding it into
+  `corroborated_by`.
+- Scoring, gating, or returning an entry from a finding file's `unanswered` array — those are search
+  records, not findings.
 - Conflating dropped with discarded.
 - Writing any file — you return your result, you do not write it anywhere.
 - Returning findings that did not clear the gate inside `passed`.

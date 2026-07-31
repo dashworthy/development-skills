@@ -23,6 +23,8 @@ Every task's requirements implicitly include these. They come from the spec; the
 - **Artifact root:** `.guardtower/<run>/` containing `findings/<lens>.json`, `brief.md`, `approved.md`, `deferred.md`.
 - **Composite score:** `round(0.6 × value + 0.4 × urgency)`. Default gate: `80`.
 - **Lens names** are exactly `reuse`, `security`, `smell`. (`abstraction` was a fourth until Task 12 merged it into `reuse`.)
+- **Every dispatch hands over every field the receiving skill declares**, and every payload names the skill to follow: `skill_path` on all three, plus `schema_path` on the analyst and arbitrator payloads (Task 13).
+- **All three GitLab position shas** — `base_sha`, `head_sha`, `start_sha` — are resolved in preflight and carried to the poster. `start_sha` is never `base_sha` (Task 13).
 - **`gh` or `glab` is required**; `jq` is NOT required and no skill may shell out to it.
 - **Guardtower never modifies the repository under review and never switches the checked-out branch.** All reading of PR content happens inside a detached `git worktree` in a temp directory, removed on every exit path.
 - **The conductor reads the arbitrator's brief and nothing else** — never a diff body, never an analyst's finding.
@@ -437,7 +439,7 @@ Body sections, in order:
 4. **Preflight** — the seven numbered steps from spec §Preflight, verbatim in substance: detect forge; verify CLI; resolve PR (base sha, head sha, changed paths only); stop if nothing reviewable changed; fetch + `git worktree add --detach`; snapshot the main tree before the first subagent of the run, whichever subagent that is; agree threshold and lenses. Include the exact commands:
    - `git remote get-url origin`
    - `gh auth status` / `glab auth status`
-   - `gh pr view <n> --json baseRefOid,headRefOid,files` / `glab mr view <n>`
+   - `gh pr view <n> --json baseRefOid,headRefOid,files` / `glab api "projects/<url-encoded repo>/merge_requests/<n>"` for `diff_refs` (Task 13 replaced `glab mr view <n>` here: it returns neither the shas nor the paths, and prints the whole MR description into the conductor)
    - `git fetch origin pull/<n>/head` (GitHub) or `git fetch origin merge-requests/<n>/head` (GitLab)
    - `git worktree add --detach <tempdir> <head-sha>`
    - `git diff --numstat HEAD` and `git status --porcelain`
@@ -774,7 +776,7 @@ Body, in order:
 5. **Score against the published rubric** — read `../reviewing-a-pull-request/references/scoring-rubric.md` and apply it as written. State that inventing your own criteria destroys reproducibility, which is the only reason the rubric is published at all. Apply the merged-duplicate urgency anchor to `reimplements` and `duplicates` findings.
 6. **Assign ids** — `<lens>-<nnn>`, zero-padded to three digits, numbered per lens in the order findings appear in that lens's file. Ids are yours; analysts never set them.
 7. **Gate and rank** — keep findings whose `composite` is at or above `threshold`. Sort `passed` by the total order: composite desc, value desc, `target_file` asc, `id` asc. State why the last two exist — two runs over the same findings must render an identical brief.
-8. **Three outcomes, never conflated** — `dropped` (evidence failed, never scored), `discarded` (verified but below the gate, scored), `passed`. Returning a dropped finding as discarded would tell the user a fabricated claim was merely low-priority.
+8. **Outcomes, never conflated** — `dropped` (evidence failed, never scored), `discarded` (verified but below the gate, scored), `passed`, and — from Task 13 — `corroborating` (verified, scored, folded into another finding's group by dedup, so neither dropped nor discarded). Returning a dropped finding as discarded would tell the user a fabricated claim was merely low-priority.
 9. **Return format** — the JSON from this task's Interfaces block.
 10. **Red flags — STOP** — scoring a finding without opening the file it cites; scoring a reuse finding without opening its `existing_solution`; inventing scoring criteria instead of applying the rubric; conflating dropped with discarded; writing any file; returning findings that did not clear the gate inside `passed`; letting an analyst-supplied `id`, `value`, `urgency` or `composite` through unchecked.
 
@@ -1190,6 +1192,116 @@ git commit -m "refactor(guardtower)!: merge the abstraction lens into reuse"
 
 ---
 
+## Task 13: Fix what the first posting run exposed
+
+Added after the first live run against a real GitLab merge request. That run produced good
+findings; what it exposed is that the *mechanics* of posting them, and of dispatching the agents
+that found them, were wrong in seven places, and that the arbitrator had no rule against putting
+one defect on the brief twice.
+
+**Files:**
+- Modify: `guardtower/skills/reviewing-a-pull-request/SKILL.md`
+- Modify: `guardtower/skills/posting-review-comments/SKILL.md`
+- Modify: `guardtower/skills/arbitrating-findings/SKILL.md`
+- Modify: `guardtower/skills/surveying-for-reuse/SKILL.md`
+- Modify: `guardtower/skills/reviewing-for-security/SKILL.md`
+- Modify: `guardtower/skills/detecting-code-smell/SKILL.md`
+- Modify: `guardtower/skills/reviewing-a-pull-request/references/finding-schema.md`
+- Modify: `guardtower/skills/reviewing-a-pull-request/references/brief-template.md`
+- Modify: `guardtower/README.md`, `guardtower/tests/validate.sh`
+- Modify: `docs/superpowers/specs/2026-07-29-guardtower-design.md`
+
+**A — cross-lens dedup.** The brief's top two entries, `security-003` at 92 and `smell-006` at 90,
+were one defect: a migration whose resumability guard keys off a column type the DDL in the same
+file had already changed. A third case had three lenses on one thing. The arbitrator gains a
+**Dedup across lenses** section, running after scoring and ids and before the gate: group findings
+whose evidence covers the same `target_file` with **overlapping line spans** (`target_line` is
+often a range, so compare spans — a bare line is a span of one); keep the highest composite as the
+group's representative; fold every other member into that representative's new `corroborated_by`
+field carrying lens, id, span and claim; report the group once. Folding is a **fourth outcome**
+beside dropped/discarded/passed — the member was verified and scored, so calling it either would
+be a lie. The corroboration reaches the reader: `brief-template.md` gains a `{{CORROBORATED_BY}}`
+line and the poster's comment body a `Corroborated by:` line, both omitted when empty. And the
+section says plainly what dedup is **not**: two findings in the same file at unrelated lines are
+two findings; overlap of the evidence spans is the test, not proximity, not a shared file, not two
+claims that sound alike.
+
+**B — seven blocking defects.**
+
+1. **`start_sha`.** Measured live: `base_sha e2c4753`, `start_sha cdc22db`, and `start_sha` changed
+   on every push (seven diff versions). The poster sent `position[start_sha]=$BASE_SHA`, which
+   matches no stored diff version, so every inline comment is rejected — after which the poster's
+   own no-fallback rule kills the whole inline set. The conductor's Post payload did not carry the
+   field at all. Resolved in preflight step 3, added to the Post payload, threaded into
+   `position[start_sha]`, with the reason it is not `base_sha` stated at both ends.
+2. **The resolve command.** `glab mr view <n>` returns title, state, author, labels, url and a
+   comment count — no shas, no paths. Named for GitLab instead:
+   `glab api "projects/<url-encoded repo>/merge_requests/<n>"`, whose `diff_refs` carries
+   `base_sha`, `start_sha` and `head_sha` together; paths from `git diff --name-only base...head`
+   after step 5's fetch.
+3. **Rule two.** That same `glab mr view` prints the entire MR description — ~2,500 words of
+   architecture narrative on the live MR — into the step that says the conductor never reads diff
+   contents. Request named fields only, pipe the GitLab response through a field extractor, and
+   state that the title and description must not enter the conductor's context, with the reason.
+4. **`vendor/` does not exist in a detached worktree.** Both analysts that needed it lost work:
+   security declined to assert anything vendor-resident, "which cost at least one candidate
+   finding"; reuse's red flag *a finding whose `existing_solution` you have not opened and read* is
+   unsatisfiable by construction for an installed package, and 3 of its 4 findings cited one. The
+   worktree section gains a step that symlinks the main checkout's `vendor/`, `node_modules/`,
+   `.venv/` and equivalents in, with why read-only reuse is safe; the reuse red flag now admits a
+   documented signature where nothing is openable, and the arbitrator's verification rule matches.
+5. **`GITLAB_HOST`** was never mentioned. Unset, every `glab` call — including preflight's
+   `glab auth status` — targets gitlab.com and reports unauthenticated, so **preflight halts on a
+   correctly-configured machine**. Exported in step 1 from the origin remote's host.
+6. **`projects/:id`** resolves from the cwd's git remote, so a dispatched subagent whose cwd is not
+   the repository silently targets another project; `glab mr note "$MR"` has the same dependency.
+   Both now address the project explicitly, and `repo` is URL-encoded (`oro%2Fwastequip`).
+7. **The unquoted heredoc.** The live rationales contain `$data`, `$settings`, `$e`,
+   `$connection`, backticks and double quotes. Bodies are now assembled into shell variables from
+   *quoted* heredocs and passed as `"$VAR"`; the GitHub review JSON is built by `python3` with
+   `json.dumps`, reading the bodies from the environment — which fixes the escaping and keeps the
+   no-`jq` property, since python3 is already this plugin's stdlib JSON tool.
+
+**C — four contract defects.**
+
+1. **No dispatch payload named the skill to follow.** All three payloads gain `skill_path`; the
+   analyst and arbitrator payloads gain `schema_path`. Declared in the conductor and in each
+   receiving skill's "What you receive".
+2. **Nothing said preflight runs in the repo under review.** The live conductor's cwd was the
+   plugin repo, whose `origin` is a different remote. Stated, along with `.guardtower/` being
+   rooted at that repository's root.
+3. **The reuse analyst was forced to leak.** Its skill calls the null-answer search record
+   "load-bearing, not a footnote" while the return format allowed one receipt line and the schema
+   had no slot, so the live analyst returned its null candidates by name. It gains an `unanswered`
+   array in its output **file** — kept, auditable, and outside the conductor's context.
+4. **`target_line` ranges and `also_at` semantics.** All three lenses emitted ranges and all three
+   flagged it; ranges are now documented as valid, written `start-end`. `also_at` is **defined**
+   rather than split: it is occurrences of the same pattern and nothing else, because both output
+   surfaces render it as "same problem, also here"; supporting material that is not an occurrence
+   belongs in `rationale`, and cross-lens corroboration is `corroborated_by`.
+
+**Validator changes.** New anchors for every item above, each tied to the specific line or sentence
+it names; the analyst dispatch brief's `skill_path`/`schema_path` tail is asserted as one shared
+span across the conductor and all three analysts, as `BRIEF_SPAN` already does for the fields before
+it; the arbitrator payload span widens from six fields to eight; the poster payload's middle run
+gains `start_sha`; and the two heredoc-delimiter checks invert — the unquoted form is now the
+regression, so the negative assertion moves onto it.
+
+- [ ] **Step 1: Write the failing tests** — add the anchors above, update the ones the fixes move.
+- [ ] **Step 2: Run test to verify it fails** — `sh guardtower/tests/validate.sh`, exit `1`.
+- [ ] **Step 3: Write the implementation** — as above.
+- [ ] **Step 4: Run test to verify it passes** — `sh guardtower/tests/validate.sh`.
+- [ ] **Step 5: Prove every new and changed check by surgical mutation** — delete the target,
+  confirm FAIL, restore from a byte snapshot, confirm byte-identical, confirm PASS.
+- [ ] **Step 6: Commit**
+
+```bash
+git add guardtower docs/superpowers
+git commit -m "fix(guardtower): close the defects the first live posting run exposed"
+```
+
+---
+
 ## Self-Review
 
 **1. Spec coverage.**
@@ -1200,8 +1312,9 @@ git commit -m "refactor(guardtower)!: merge the abstraction lens into reuse"
 | How a run flows (diagram) | 1 (README) |
 | The worktree | 3 |
 | Skills table | 3–9 |
-| Preflight, run id | 3 |
-| The pass; context firewall | 3 (dispatch + receipt), 8 (arbitrator reads the files) |
+| Preflight, run id | 3, corrected in 13 (cwd, `GITLAB_HOST`, the resolve command, `start_sha`) |
+| The pass; context firewall | 3 (dispatch + receipt), 8 (arbitrator reads the files), 13 (`skill_path`/`schema_path`, and the MR description kept out) |
+| Dedup across lenses | 13 |
 | Reconciliation | 3 |
 | Findings (field table) | 2 |
 | The reuse lens (both halves of duplication) | 4, merged with the abstraction lens in 12 |

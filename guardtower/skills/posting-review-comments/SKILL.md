@@ -31,26 +31,30 @@ One dispatch per run:
   "repo": "<owner/repo, or GitLab project id/path>",
   "base_sha": "<PR base sha>",
   "head_sha": "<PR head sha>",
+  "start_sha": "<GitLab diff-version anchor — never equal to base_sha>",
   "run_id": "<YYYY-MM-DD>-<pr-number>-<suffix>",
   "lenses_run": ["reuse", "security", "smell"],
   "lenses_skipped": ["<lens>", "..."],
+  "skill_path": "<absolute path to the SKILL.md this dispatch names>",
   "approved": [ "<the in-scope subset of the arbitrator's `passed` array>" ]
 }
 ```
 
 `forge`, `pr_number`, `repo`, `approved`, and `head_sha` are this task's declared interface.
-`base_sha`, `run_id`, `lenses_run`, and `lenses_skipped` are included alongside them because two
-requirements below cannot be met without them and the conductor already holds all four at zero
-extra cost: GitLab's discussion API requires a `base_sha` in addition to `head_sha` to anchor a
-diff position (see **One review, submitted once**), and the summary comment cannot name the run or
-say which lenses were skipped (see **Summary comment structure**) without being told.
+`base_sha`, `start_sha`, `run_id`, `lenses_run`, `lenses_skipped`, and `skill_path` are included
+alongside them because requirements below cannot be met without them and the conductor already
+holds all six at zero extra cost: GitLab's discussion API requires `base_sha` **and** `start_sha`
+in addition to `head_sha` to anchor a diff position (see **One review, submitted once**), the
+summary comment cannot name the run or say which lenses were skipped (see **Summary comment
+structure**) without being told, and `skill_path` is what lets this skill resolve the relative
+citation below to the arbitrator's own document from whatever directory a subagent starts in.
 
 Each entry in `approved` carries exactly the fields the arbitrator assigns in its `passed` array —
 never more, never invented here. See `../arbitrating-findings/SKILL.md`'s Return format for the
 authoritative field list: `id`, `lens`, `target_file`, `target_line`, `claim`, `rationale`,
-`proposal`, `in_diff`, `also_at`, `value`, `urgency`, `composite`, plus `kind` on every reuse
-finding, `tier` and `existing_solution` on every reuse finding except an `extract` one, and
-`adoption_cost` at tier 2. If a field this skill wants isn't on
+`proposal`, `in_diff`, `also_at`, `corroborated_by`, `value`, `urgency`, `composite`, plus `kind`
+on every reuse finding, `tier` and `existing_solution` on every reuse finding except an `extract`
+one, and `adoption_cost` at tier 2. If a field this skill wants isn't on
 that list, it doesn't exist yet — that is a conductor or arbitrator change, not something to
 paper over here.
 
@@ -58,30 +62,65 @@ paper over here.
 
 Build the whole review — every inline comment and the one summary body — before you submit
 anything, then post it as a single request, so the reviewer gets one notification rather than one
-per comment. Below, `$REPO` is `repo`; `$PR` and `$MR` are both `pr_number` (GitHub calls it a
-pull number, GitLab a merge request iid); `$HEAD_SHA` and `$BASE_SHA` are `head_sha` and
-`base_sha`.
+per comment. Below, `$REPO` is `repo` and `$ENC_REPO` is `repo` URL-encoded; `$PR` and `$MR` are
+both `pr_number` (GitHub calls it a pull number, GitLab a merge request iid); `$HEAD_SHA`,
+`$BASE_SHA` and `$START_SHA` are `head_sha`, `base_sha` and `start_sha`.
 
-GitHub, via `gh api` with a JSON body built in a heredoc — one call, one pending review, submitted
-as `COMMENT` so it posts immediately without requiring a separate approve/request-changes step.
-**The heredoc delimiter is unquoted (`<<JSON`, not `<<'JSON'`) on purpose:** a quoted delimiter
-suppresses every expansion inside the body, so `$HEAD_SHA` would post to the pull request as that
-literal nine-character string rather than the sha, and the review would attach to nothing.
+### Finding text never reaches the shell as text
+
+Do this before either forge block, because both depend on it. **Every body — inline or summary —
+is assembled into a shell variable from a quoted heredoc, and reaches a command only as `"$VAR"`.**
+Real finding text is hostile to a shell: the first live run's rationales contained `$data`,
+`$settings`, `$e`, `$connection`, backticks and double quotes, every one of them an ordinary
+identifier quoted in prose about the code. Written literally into an unquoted heredoc or between
+double quotes, `$data` expands to the empty string and deletes itself from the posted comment
+without a word, a backtick opens a command substitution, and a single `"` ends the JSON string and
+breaks the request.
 
 ```sh
-gh api "repos/$REPO/pulls/$PR/reviews" \
-  --method POST \
-  --input - <<JSON
-{
-  "commit_id": "$HEAD_SHA",
-  "event": "COMMENT",
-  "body": "<summary markdown, per Summary comment structure>",
-  "comments": [
-    { "path": "src/auth/token.js", "line": 31, "side": "RIGHT", "body": "**guardtower security-001** (93) …" }
-  ]
-}
-JSON
+SUMMARY=$(cat <<'GT_BODY'
+<summary markdown, per Summary comment structure>
+GT_BODY
+)
+BODY_1=$(cat <<'GT_BODY'
+**guardtower security-001** (93) — $data is interpolated into the query …
+GT_BODY
+)
 ```
+
+The delimiter **is** quoted there, and that is the point: the shell performs no expansion at all
+inside a quoted heredoc, so those bytes arrive exactly as the analyst wrote them. Shas and paths go
+in as shell variables the command substitutes; finding text goes in as data the shell never reads.
+
+GitHub, via `gh api` — one call, one pending review, submitted as `COMMENT` so it posts immediately
+without requiring a separate approve/request-changes step. `python3` assembles the JSON, because
+`json.dumps` escapes every quote, backslash and control character correctly and the bodies reach it
+through the environment rather than through a Python literal, so nothing a finding contains can
+break the program that is quoting it. This keeps the no-`jq` property intact: python3 is already
+this plugin's stdlib JSON tool, so nothing new can be missing.
+
+```sh
+export HEAD_SHA SUMMARY BODY_1
+python3 - <<'GT_JSON' | gh api "repos/$REPO/pulls/$PR/reviews" --method POST --input -
+import json, os
+print(json.dumps({
+    "commit_id": os.environ["HEAD_SHA"],
+    "event": "COMMENT",
+    "body": os.environ["SUMMARY"],
+    "comments": [
+        {"path": "src/auth/token.js", "line": 31, "side": "RIGHT",
+         "body": os.environ["BODY_1"]},
+    ],
+}))
+GT_JSON
+```
+
+An earlier version of this skill wrote that body into a heredoc with an **unquoted** delimiter so
+the shell would substitute `$HEAD_SHA` into it. That is a correctness bug, not a style choice: the
+one expansion that fills the sha in is the same expansion that empties `$data` out of a rationale,
+and no delimiter choice serves both. Quoting the delimiter and substituting the sha in Python
+serves both, which is why the sha is read from the environment above rather than written into the
+document at all. **Do not "simplify" this back to a shell-interpolated body.**
 
 GitLab has no single-request equivalent: one discussion per inline comment, plus one note for the
 summary. This is still "one review, submitted once" in the sense that matters — no per-finding
@@ -89,18 +128,36 @@ notification-worthy event beyond what the routing below produces, and every call
 same batch with nothing held back for a later pass:
 
 ```sh
-glab api "projects/:id/merge_requests/$MR/discussions" \
+glab api "projects/$ENC_REPO/merge_requests/$MR/discussions" \
   --method POST \
-  -f body="**guardtower security-001** (93) …" \
+  -f body="$BODY_1" \
   -f 'position[position_type]=text' \
   -f "position[new_path]=src/auth/token.js" \
   -f "position[new_line]=31" \
   -f "position[head_sha]=$HEAD_SHA" \
   -f "position[base_sha]=$BASE_SHA" \
-  -f "position[start_sha]=$BASE_SHA"
+  -f "position[start_sha]=$START_SHA"
 
-glab mr note "$MR" --message "<summary markdown, per Summary comment structure>"
+glab mr note "$MR" -R "$REPO" --message "$SUMMARY"
 ```
+
+**Address the project explicitly; never `projects/:id`.** `:id` is resolved by `glab` from the git
+remote of whatever directory the process happens to be standing in, and a dispatched subagent's
+working directory is not guaranteed to be the repository under review — so `:id` can silently
+resolve to a different project and post this run's review onto a stranger's merge request. `repo`
+was handed to this skill exactly so it never has to infer that. `glab mr note "$MR"` carries the
+same dependency and needs `-R "$REPO"` for the same reason. **`repo` must be URL-encoded** in the
+path: every `/` becomes `%2F`, so `oro/wastequip` is `oro%2Fwastequip` — an unencoded slash splits
+the path segment and the API answers 404.
+
+**`position[start_sha]` is `start_sha`, never `base_sha`.** They are different values — measured
+live at `base_sha e2c4753` against `start_sha cdc22db` on the same merge request — and `start_sha`
+changes on every push, seven diff versions on that one MR. GitLab validates the whole position
+triple against a stored diff version, so a triple carrying `base_sha` where `start_sha` belongs
+matches no version and the API rejects the comment. Every inline comment then fails, and **Failure
+handling** below correctly refuses to fall back — so this one field decides whether the entire
+inline set posts or none of it does. If `start_sha` is missing from your dispatch, say so and stop;
+do not substitute `base_sha` for it.
 
 ## Routing
 
@@ -125,6 +182,8 @@ Every posted comment — inline or inside the summary — follows the same templ
 
 Also at: <also_at, comma-joined>
 
+Corroborated by: <corroborated_by, one "<lens> (<id>): <claim>" per entry, comma-joined>
+
 Existing solution: <existing_solution>
 Adoption cost: <adoption_cost>
 
@@ -136,6 +195,13 @@ finding sits at a single location. Do not omit it when it *is* populated: an `ex
 usually spans several files, and `target_file`/`target_line` names only the clearest of them, so a
 comment that drops `also_at` silently reports one occurrence of a problem the analyst found in
 five.
+
+The `Corroborated by` line appears only when `corroborated_by` is non-empty, and it is not
+decoration: it names the other lenses that found this same defect independently, at the same
+evidence span, which the arbitrator folded into this finding instead of posting twice (see
+`../arbitrating-findings/SKILL.md`'s Dedup across lenses). Two lenses reaching the same conclusion
+from different starting points is stronger evidence than one lens's opinion, and dropping the line
+posts the weaker of the two claims the reviewer was entitled to see.
 
 The `Existing solution` line appears only for reuse findings that cite one — `reimplements`,
 `duplicates`, and `diverges`, never `extract`, which by definition found nothing that already
@@ -196,6 +262,10 @@ part of what you report when you return it.
 ## Red flags — STOP
 
 - Posting anything not in `approved`.
+- Writing a finding's text anywhere the shell will expand it — an unquoted heredoc, an unquoted
+  command substitution, or between double quotes in the command itself.
+- Sending `base_sha` as `position[start_sha]`, or posting inline without `start_sha` at all.
+- Addressing the project as `projects/:id`, or calling `glab mr note` with no `-R "$REPO"`.
 - Posting one comment per finding instead of one review, submitted once.
 - Silently relocating an inline comment to the summary without saying so.
 - Retrying with a reduced payload after a failure, or falling back to a plain comment when an

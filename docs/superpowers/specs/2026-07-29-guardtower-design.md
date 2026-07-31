@@ -94,9 +94,26 @@ So guardtower never reads the PR through your working tree and never switches yo
 1. Fetch the head ref — `git fetch origin pull/<n>/head` on GitHub, `git fetch origin
    merge-requests/<n>/head` on GitLab. Both resolve fork-sourced changes.
 2. `git worktree add --detach <tempdir> <head-sha>` — a second checkout in a temp directory.
-3. Analysts read **inside that worktree** — the diff, and every manifest, config file or source
-   file they open to answer a question. The `<base-sha>...<head-sha>` diff is computed there too.
-4. Remove the worktree at the end of the run, on every exit path including a halt.
+3. **Link the repository's dependency tree into it.** A detached worktree is a clean checkout, so
+   every gitignored dependency directory — `vendor/`, `node_modules/`, `.venv/`, a vendored Go
+   tree — is absent, and the analysts that need it silently review less. Symlink each one that
+   exists in the main checkout into the worktree before dispatching anything. Read-only reuse is
+   safe: every analyst and the arbitrator are read-only, the conductor creates the links rather
+   than they, reconciliation measures the main tree by path, and the links go with the worktree at
+   cleanup because removing a symlink does not touch what it points at.
+4. Analysts read **inside that worktree** — the diff, and every manifest, config file, source file
+   or installed package they open to answer a question. The `<base-sha>...<head-sha>` diff is
+   computed there too.
+5. Remove the worktree at the end of the run, on every exit path including a halt.
+
+**Why the dependency link is not optional.** The first live run had none, and both lenses that
+needed one lost work. The security analyst could not establish whether a column type and an
+encoder service existed at all — "all vendor-resident. I resolved this by not asserting anything
+that depended on vendor behavior, which cost at least one candidate finding." The reuse lens's red
+flag *a finding whose `existing_solution` you have not opened and read* is unsatisfiable by
+construction when the existing solution is an installed package, and 3 of its 4 findings cited
+one, so an arbitrator applying that rule as written would have dropped all three. This is not
+Composer-specific: npm, pip and vendored Go trees are all gitignored the same way.
 
 Consequences worth stating: your branch, your index, and your uncommitted work are untouched for
 the whole run; an analyst that writes a file inside the temp worktree does no damage, because the
@@ -146,13 +163,44 @@ the code and measures nothing, so a second iteration would re-derive identical f
 
 ### Preflight
 
+**Every preflight step runs with the working directory inside the repository under review** — the
+checkout whose `origin` is the forge hosting this PR, not wherever guardtower was invoked. On the
+first live run the conductor's cwd was the plugin repo, whose `origin` is a different remote
+entirely, so step 1 would have detected the wrong forge and step 3 resolved the wrong project,
+neither of them erroring. `.guardtower/<run>/` is rooted at that same repository's root, because
+that is the tree reconciliation measures.
+
 1. **Detect the forge** from `git remote get-url origin`. `github.com` → `gh`; `gitlab.*` →
-   `glab`. Self-hosted or ambiguous → ask the user, do not guess.
-2. **Verify the CLI** is present and authenticated (`gh auth status` / `glab auth status`).
-   Missing or unauthenticated → name the tool, say how to fix it, and stop. This mirrors verity's
-   stance on a missing `jq`: a fixable local problem is not a reason to quietly deliver less.
-3. **Resolve the PR/MR** — base sha, head sha, and changed paths. **Paths only**; the conductor
-   never reads diff contents.
+   `glab`. Self-hosted or ambiguous → ask the user, do not guess. Keep the path portion — it is
+   the only source of `repo` — and, on GitLab, **export the host portion as `GITLAB_HOST` before
+   any `glab` call.** Unset, `glab` targets gitlab.com, so step 2 reports unauthenticated against
+   a host the user has no account on and preflight halts on a correctly-configured machine.
+   Self-hosted GitLab is the common enterprise case.
+2. **Verify the CLI** is present and authenticated (`gh auth status` / `glab auth status`, the
+   latter with `GITLAB_HOST` already exported). Missing or unauthenticated → name the tool, say
+   how to fix it, and stop. This mirrors verity's stance on a missing `jq`: a fixable local
+   problem is not a reason to quietly deliver less.
+3. **Resolve the PR/MR** — base sha, head sha, **start sha**, and changed paths. **Paths only**;
+   the conductor never reads diff contents.
+
+   GitHub: `gh pr view <n> --json baseRefOid,headRefOid,files` — named fields only. GitLab:
+   `glab api "projects/<url-encoded repo>/merge_requests/<n>"`, whose `diff_refs` carries
+   `base_sha`, `start_sha` and `head_sha` together, piped through a field extractor so only the
+   shas reach the conductor's context; changed paths come from `git diff --name-only
+   <base>...<head>` once step 5 has fetched the head ref. **`glab mr view <n>` is not that
+   command**: it returns title, state, author, labels, url and a comment count, and none of the
+   three shas or the changed paths.
+
+   **`start_sha` is not `base_sha`** — measured live at `e2c4753` against `cdc22db` on one MR, and
+   it changes on every push (seven diff versions observed). GitLab validates an inline comment's
+   position triple against a stored diff version, so a position built with `base_sha` in the
+   `start_sha` slot matches no version and every inline comment is rejected.
+
+   **The PR/MR title and description must not enter the conductor's context.** `glab mr view <n>`
+   prints the whole description — ~2,500 words of architecture narrative on the live MR — into the
+   very step that says the conductor never reads diff contents. It is not a diff, but it is
+   substantive prose about the code under review, and it primes every downstream judgement the
+   conductor is supposed to make on the arbitrator's numbers alone.
 4. **Stop if nothing reviewable changed.** Say so plainly and exit.
 5. **Fetch and add the detached worktree**, per **The worktree** above.
 6. **Snapshot the main tree** — `git diff --numstat HEAD` and `git status --porcelain` — before
@@ -202,6 +250,15 @@ tree it happens to be standing in — the user's own checkout — so evidence ve
 this design rests on, can silently run against the wrong revision. Every skill's declared inputs
 are handed over in full at every dispatch site; a dispatch that names a subset is a bug even when
 nothing visibly breaks.
+
+**Every dispatch names the skill to follow.** Each of the three payloads carries a `skill_path` —
+the absolute path to the SKILL.md that dispatch names — and the analyst and arbitrator payloads
+additionally carry `schema_path`, the absolute path to `finding-schema.md`. Without them a
+dispatched subagent is handed a `lens` with no document defining it and told to write "the shape
+`finding-schema.md` defines" with no path to that document, and cannot resolve any skill's relative
+citations from a directory nothing told it it is standing in. The first live run's conductor
+supplied both in prose at dispatch time, which is the right instinct and the wrong mechanism: a
+payload field survives to the next run, an improvised sentence does not.
 
 **The conductor owns every document under `.guardtower/` except the analysts' finding files.** The
 arbitrator returns its passed items and the conductor renders the brief, following verity's split
@@ -265,13 +322,13 @@ dropped, not scored low.
 | `id` | yes | `<lens>-<nnn>` — `security-003`, `reuse-011`. Assigned by the arbitrator on merge |
 | `lens` | yes | `reuse`, `security`, or `smell` |
 | `target_file` | yes | Repo-relative path |
-| `target_line` | yes | Line or range the evidence sits at, at the head sha |
+| `target_line` | yes | Line or range the evidence sits at, at the head sha — `120`, or `120-127` |
 | `evidence` | yes | The actual source text at that location — what the arbitrator re-reads to confirm |
 | `claim` | yes | What is wrong, as an observable consequence |
 | `rationale` | yes | Why it matters, concretely: what breaks, for whom, how they find out |
 | `proposal` | yes | What to do instead. Prose, never a patch — guardtower does not modify code |
 | `in_diff` | yes | Whether `target_line` falls inside a diff hunk. Decides inline vs summary |
-| `also_at` | no | Further `file:line` locations for a finding spanning several files |
+| `also_at` | no | Further **occurrences** of the same pattern — `file:line` or `file:start-end` |
 | `kind` | every reuse finding | `reimplements`, `duplicates`, `diverges`, or `extract` — see the reuse lens below |
 | `tier` | reuse, not `extract` | A JSON number, never a string: `1` already reachable, `2` not yet installed |
 | `existing_solution` | reuse, not `extract` | The thing that already does this: a repo path, a package plus the exact export, or a stdlib/platform API |
@@ -280,9 +337,34 @@ dropped, not scored low.
 | `value` | yes | 0–100, assigned by the arbitrator |
 | `urgency` | yes | 0–100, assigned by the arbitrator |
 | `composite` | yes | `round(0.6 × value + 0.4 × urgency)`, assigned by the arbitrator |
+| `corroborated_by` | no | Other lenses that found this same defect at the same span. Assigned by the arbitrator's dedup step |
 
-Analysts set everything except `id`, `value`, `urgency`, and `composite`. Those are the
-arbitrator's.
+Analysts set everything except `id`, `value`, `urgency`, `composite`, and `corroborated_by`. Those
+are the arbitrator's.
+
+**A range is the normal `target_line`, not an exception.** All three lenses emitted ranges on the
+first live run, because their evidence is blocks — a duplicated method body, a migration's guard,
+a nested conditional — and all three flagged the schema for not saying whether `file:120-127` was
+allowed. It is, written `start-end` and inclusive, for `target_line` and for every entry in
+`also_at`. Cite the span the `evidence` actually quotes: the arbitrator re-reads that span, and
+dedup overlaps against it.
+
+**`also_at` means occurrences, and only occurrences.** It was being used for two different things
+— further sites of the same pattern, and supporting material that corroborates the claim without
+being an occurrence of it — and both the brief and the posted comment render it as *the same
+problem, also here*, so the second use inflates the occurrence count the extract bar is measured
+against. Supporting material that is not an occurrence goes in `rationale`. Cross-lens
+corroboration is neither, and is `corroborated_by`, which the arbitrator builds and no analyst
+writes.
+
+**One lens writes one extra top-level key.** The reuse lens's finding file carries an `unanswered`
+array beside `findings`, holding the mandatory question's null-answer record: candidate, what was
+searched, what was checked in the manifest, what stdlib and platform APIs were ruled out. That
+lens calls the record "load-bearing, not a footnote" and had nowhere to put it — the return format
+allowed one receipt line and the schema had no slot — so the first live run's reuse analyst
+returned its null candidates by name to the conductor and breached the firewall to obey the rule.
+A record required to be produced and then structurally discarded guarantees that breach. It is not
+a finding: nothing scores it, nothing gates it, and the arbitrator skips it.
 
 ## The reuse lens — challenge the decision to build
 
@@ -447,6 +529,26 @@ worktree** and compare against `evidence`. If the evidence does not hold — the
 text differs, the cited code is a comment — **drop the finding and record the reason**. Dropped
 findings are reported as a count with one-line reasons, never scored.
 
+**Dedup across lenses.** After scoring and before the gate, findings whose evidence covers the
+same `target_file` with **overlapping line spans** are one group. The highest composite
+represents it and keeps its own id and scores; every other member is folded into that
+representative's `corroborated_by` — lens, id, span and claim — and the group is reported once.
+The first live run's top two brief entries, `security-003` at 92 and `smell-006` at 90, were one
+defect (a migration whose resumability guard keys off a column type the DDL had already changed),
+and a third case had three lenses on one thing; a reviewer who reads the same defect twice under
+two ids stops trusting the ranking, which is the only thing the gate is built on.
+
+Folding is not discarding. A defect three lenses found independently is *stronger* evidence than
+one lens's opinion, so the corroboration reaches the brief and the posted comment rather than
+being dropped on the floor. It adds a fourth outcome to the arbitrator's three — a corroborating
+finding was verified and scored, and belongs in neither `dropped` nor `discarded`.
+
+**What dedup is not.** Two findings in the same file at unrelated lines are two findings. Overlap
+of the evidence spans is the test — not proximity, not a shared file, not two claims that sound
+alike — and two different `target_file`s are never one group. Dedup runs after scoring because it
+needs composites to pick a representative, and before the gate so a group clears the gate once, on
+its best member's score.
+
 ## Triage and posting
 
 The conductor presents every finding that cleared the gate, with its scores and rationale, and the
@@ -466,6 +568,25 @@ present in the diff. A finding whose evidence sits outside the diff hunks — co
 findings, where the duplicated original is untouched code — cannot be inline-anchored. That is a
 constraint of the forges, not a design preference, and the command says which findings were
 relocated to the summary rather than moving them silently.
+
+**GitLab's position triple is three shas, not two.** `position[start_sha]` is `start_sha` from
+`diff_refs`, never `base_sha`; see Preflight step 3 for the measured values and why the two cannot
+be substituted. The poster is dispatched with all three.
+
+**The poster addresses the project explicitly.** Every `glab api` call uses
+`projects/<url-encoded repo>` and `glab mr note` takes `-R "<repo>"`, because `projects/:id`
+resolves from the git remote of whatever directory the process is standing in — and a dispatched
+subagent's cwd is not guaranteed to be the repository under review, so `:id` can silently target
+another project. `repo` is URL-encoded in the path: `oro/wastequip` is `oro%2Fwastequip`.
+
+**Finding text never reaches the shell as text.** Comment bodies are assembled into shell
+variables from *quoted* heredocs and passed as `"$VAR"`; the GitHub review body is built by
+`python3` with `json.dumps` — stdlib, so the no-`jq` property holds. The first live run's
+rationales contained `$data`, `$settings`, `$e`, `$connection`, backticks and double quotes, all
+ordinary identifiers quoted in prose: interpolated by the shell, `$data` deletes itself from the
+posted comment and one `"` breaks the JSON. The shas are substituted where the text is not — from
+the environment, inside Python — because one heredoc cannot both expand a sha and preserve a
+rationale.
 
 ## Disk
 
@@ -526,6 +647,10 @@ Five subagents per run: three analysts, one arbitrator, one poster.
 
 - `git` with worktree support
 - `gh` (GitHub) or `glab` (GitLab), authenticated — **required**, not optional
+- On a self-hosted GitLab, `GITLAB_HOST`, exported by preflight step 1 from the origin remote's
+  host. Nothing else supplies it, and unset it silently redirects every `glab` call to gitlab.com
+- `python3` (stdlib only) — already required by the validator, and what the poster builds its JSON
+  with
 
 `jq` is **not** required. The analysts' finding files are JSON, but the arbitrator reads them with
 the Read tool rather than shelling out — so unlike verity, guardtower has no tool whose absence

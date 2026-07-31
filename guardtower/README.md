@@ -28,10 +28,10 @@ flowchart TD
     START["/guardtower:review &lt;url or number&gt;"] --> F1["Detect the forge from origin.<br/>Self-hosted or ambiguous: ask, never guess"]
     F1 --> F2{"gh / glab present<br/>and authenticated?"}
     F2 -->|no| STOPCLI["Name the tool and how to fix it — stop.<br/>Never post a reduced set silently"]
-    F2 -->|yes| F3["Resolve the PR/MR: base sha, head sha,<br/>changed paths. Paths only, never diff contents"]
+    F2 -->|yes| F3["Resolve the PR/MR: base sha, head sha, start sha,<br/>changed paths. Paths only — never diff contents,<br/>never the PR title or description"]
     F3 --> F4{"Any reviewable<br/>file changed?"}
     F4 -->|no| STOPNONE["Nothing to review — stop"]
-    F4 -->|yes| WT["Fetch the head ref and add a DETACHED<br/>worktree in a temp dir.<br/>Your branch is never switched"]
+    F4 -->|yes| WT["Fetch the head ref and add a DETACHED<br/>worktree in a temp dir, with the installed<br/>dependency tree linked in read-only.<br/>Your branch is never switched"]
     WT --> SNAP["Snapshot the main tree: numstat + untracked.<br/>Taken before the FIRST subagent"]
     SNAP --> AGREE["Agree the threshold — default 80 —<br/>and which lenses to run"]
     AGREE --> BRIEF
@@ -82,6 +82,12 @@ forge from `git remote get-url origin` and shells out to whichever CLI owns it; 
 ambiguous remote is asked about rather than guessed. Missing or unauthenticated CLI stops the run
 before anything else happens — guardtower names the tool and how to fix it rather than posting a
 quietly reduced set of comments.
+
+**On a self-hosted GitLab**, guardtower exports `GITLAB_HOST` from the origin remote's host before
+its first `glab` call. Without it `glab` targets gitlab.com, so the authentication check above fails
+against a host you have no account on and the run stops on a machine that was configured correctly.
+Run guardtower from inside the repository under review: the forge, the project and the artifact
+directory are all resolved from that checkout.
 
 **`jq` is not required.** The analysts' finding files are JSON, but the arbitrator reads them with
 the Read tool rather than shelling out — unlike verity, guardtower has no tool whose absence

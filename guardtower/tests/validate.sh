@@ -128,6 +128,55 @@ if [ -s "$CONDUCTOR/references/finding-schema.md" ]; then
   grep_flat "$CONDUCTOR/references/finding-schema.md" 'so **every** finding it emits carries a `kind`, and `extract` is the value for the second half' \
     && grep_flat "$CONDUCTOR/references/finding-schema.md" 'the same duplicated code scored differently depending on which lens happened to raise it — observed live, at composite 81 and 74 on the same six sites'
   check $? "finding-schema.md states why every reuse finding carries a kind"
+
+  # target_line ranges. All three lenses emitted them on the first live run — their evidence is
+  # blocks, not lines — and all three flagged the schema for never saying whether `file:120-127` was
+  # allowed. The field's own row said "Line or range" and stopped there, which is why three
+  # independent analysts each had to guess the notation. Anchored to the bolded sentence that fixes
+  # the FORM, since the row alone was what left it ambiguous, and to the widening of `also_at` to
+  # the same two forms, which is separately deletable.
+  grep_flat "$CONDUCTOR/references/finding-schema.md" '**A range is valid wherever a line is, and it is written `start-end` — `120-127`, inclusive at both ends.**' \
+    && grep_flat "$CONDUCTOR/references/finding-schema.md" '`also_at` takes the same two forms, `file:line` and `file:start-end`.'
+  check $? "finding-schema.md documents target_line ranges and their form"
+
+  # …and the counterweight, which matters now that dedup overlaps spans: a range padded out to the
+  # enclosing function swallows every unrelated finding in it into one group. The rule above without
+  # this one licenses exactly that.
+  grep_flat "$CONDUCTOR/references/finding-schema.md" 'The one thing a range is not is a licence to widen.'
+  check $? "finding-schema.md forbids widening a range past the evidence"
+
+  # also_at's meaning, which was being used for two different things — further occurrences, and
+  # supporting material that corroborates without being an occurrence — while both output surfaces
+  # render it as "same problem, also here". The second use inflates the occurrence count the extract
+  # bar is measured against, and an `extract` finding is dropped or kept on that count. Three
+  # clauses: the definition, where non-occurrence support goes instead, and the separation from
+  # cross-lens corroboration, which is a third thing again and belongs to the arbitrator.
+  grep_flat "$CONDUCTOR/references/finding-schema.md" '**Every entry in `also_at` is a location where the same pattern this finding names actually occurs**' \
+    && grep_flat "$CONDUCTOR/references/finding-schema.md" '**Supporting material that is not an occurrence belongs in `rationale`' \
+    && grep_flat "$CONDUCTOR/references/finding-schema.md" 'Cross-lens corroboration is a third thing again and is neither'
+  check $? "finding-schema.md defines also_at as occurrences and nothing else"
+
+  # The one extra top-level key, and whose it is. Without this the reuse lens writes a sibling of
+  # `findings` that the shared contract does not admit, which is drift in the direction the whole
+  # document exists to prevent.
+  grep_flat "$CONDUCTOR/references/finding-schema.md" 'the reuse lens writes an **`unanswered`** array holding its null-answer search record' \
+    && grep_flat "$CONDUCTOR/references/finding-schema.md" 'No other lens writes it, and nothing else is ever added at that level.'
+  check $? "finding-schema.md admits the reuse lens's unanswered array"
+
+  # corroborated_by is arbitrator-owned, like id/value/urgency/composite, and the row plus the
+  # ownership sentence are separately deletable. The second clause carries the reason an analyst
+  # could not fill it even if it tried, which is what makes the ownership non-arbitrary.
+  grep -q '^| `corroborated_by` | no |' "$CONDUCTOR/references/finding-schema.md" \
+    && grep_flat "$CONDUCTOR/references/finding-schema.md" '`id`, `value`, `urgency`, `composite`, and `corroborated_by` are never set by an analyst.' \
+    && grep_flat "$CONDUCTOR/references/finding-schema.md" 'no lens can see another lens'"'"'s findings, which is why deduping them is a step that happens after all three have returned'
+  check $? "finding-schema.md marks corroborated_by as the arbitrator's"
+
+  # The dependency tree's reachability, on the document all three analysts share. The conductor
+  # linking `vendor/` in is only half the fix; a lens that still believes an installed package is
+  # unreadable goes on declining to assert anything about it.
+  grep_flat "$CONDUCTOR/references/finding-schema.md" '**The dependency tree is reachable there.**' \
+    && grep_flat "$CONDUCTOR/references/finding-schema.md" 'the conductor links `vendor/`, `node_modules/`, `.venv/` and their equivalents in from the main checkout before dispatching you'
+  check $? "finding-schema.md tells analysts the dependency tree is reachable in the worktree"
 fi
 
 # The rubric must carry the composite formula, the gate, and the migration anchor. Each is
@@ -352,6 +401,70 @@ if [ -s "$C" ]; then
   [ -z "$miss" ]
   check $? "the analyst dispatch brief agrees field-for-field across the conductor and all three analysts (mismatched:$miss)"
 
+  # The brief's TAIL, added after the first live run and asserted the same way and across the same
+  # four documents. BRIEF_SPAN above deliberately stops inside `output_path`'s value, because that
+  # value is the one thing that legitimately differs between the conductor (`<lens>.json`) and each
+  # analyst (`reuse.json`, `security.json`, `smell.json`) — so the two fields AFTER it cannot join
+  # that span and need one of their own. They are byte-identical in all four documents by design,
+  # which is what makes a shared span possible at all.
+  #
+  # What they close: the brief carried a `lens` and no path to that lens's SKILL.md, and told the
+  # analyst to write "the shape finding-schema.md defines" with no path to that document either. The
+  # live conductor supplied both in prose at dispatch time — the right instinct, the wrong
+  # mechanism, since an improvised sentence does not survive to the next run.
+  #
+  # `schema_path`'s value is deliberately the BARE basename, not `references/finding-schema.md`:
+  # check_links resolves any `references/<name>.md` it finds against the file's own directory, and
+  # an analyst skill is not in the conductor's directory, so the pathier form makes four correct
+  # documents fail a link check over a placeholder that was never a link.
+  #
+  # The span begins at `.json>", ` — the TAIL of output_path's value — and not at `"skill_path"`,
+  # which is where it was first written. Proven by mutation: deleting both tail lines from the
+  # conductor's ANALYST BRIEF left this check green, because the conductor's ARBITRATOR payload
+  # ends in the same two lines verbatim and satisfied the search on its own. Starting inside
+  # output_path's value pins the span to the analyst brief in every one of the four documents,
+  # while staying byte-identical across them — the value's differing head (`<lens>.json` versus
+  # `reuse.json`) is left outside the anchor, exactly as BRIEF_SPAN leaves it. Being contiguous
+  # from there, it also catches a field inserted between output_path and skill_path.
+  BRIEF_TAIL='.json>", "skill_path": "<absolute path to the SKILL.md this dispatch names>", "schema_path": "<absolute path to finding-schema.md>"'
+  miss=""
+  for doc in "$C" \
+             "$PLUGIN/skills/surveying-for-reuse/SKILL.md" \
+             "$PLUGIN/skills/reviewing-for-security/SKILL.md" \
+             "$PLUGIN/skills/detecting-code-smell/SKILL.md"; do
+    [ -s "$doc" ] && grep_flat "$doc" "$BRIEF_TAIL" || miss="$miss ${doc#"$PLUGIN"/}"
+  done
+  [ -z "$miss" ]
+  check $? "the analyst dispatch brief names the skill and the schema in all four documents (mismatched:$miss)"
+
+  # …and the shared prose that tells an analyst what to DO with them, asserted across the three
+  # analysts. The span above proves the fields are handed over; nothing in it proves any analyst was
+  # told to open the contract, and an analyst that never opens it writes to a shape reconstructed
+  # from memory. Identical wording in all three on purpose, for the same reason the payload is.
+  ANALYST_PATHS='`skill_path` is this document and `schema_path` is the finding contract you write to — open the contract before you write anything'
+  miss=""
+  for doc in "$PLUGIN/skills/surveying-for-reuse/SKILL.md" \
+             "$PLUGIN/skills/reviewing-for-security/SKILL.md" \
+             "$PLUGIN/skills/detecting-code-smell/SKILL.md"; do
+    [ -s "$doc" ] && grep_flat "$doc" "$ANALYST_PATHS" || miss="$miss ${doc#"$PLUGIN"/}"
+  done
+  [ -z "$miss" ]
+  check $? "every analyst is told to open the contract skill_path and schema_path name (mismatched:$miss)"
+
+  # And that every analyst knows the dependency tree is reachable. This is the half of the vendor
+  # fix that lives on the reading side: the conductor can link `vendor/` in, but a lens that still
+  # believes an installed package is a black box goes on declining to assert anything about it —
+  # which is exactly what the live security analyst did, at the cost of a candidate finding.
+  DEP_REACH='The worktree also carries the repository'"'"'s **installed dependency tree**'
+  miss=""
+  for doc in "$PLUGIN/skills/surveying-for-reuse/SKILL.md" \
+             "$PLUGIN/skills/reviewing-for-security/SKILL.md" \
+             "$PLUGIN/skills/detecting-code-smell/SKILL.md"; do
+    [ -s "$doc" ] && grep_flat "$doc" "$DEP_REACH" || miss="$miss ${doc#"$PLUGIN"/}"
+  done
+  [ -z "$miss" ]
+  check $? "every analyst is told the installed dependency tree is reachable in the worktree (mismatched:$miss)"
+
   # The dispatch set the conductor declares exhaustive. Anchored to the sentence that enumerates
   # it, because that list is the only place a run's five dispatches are named together — and it is
   # the surface a deleted lens leaves an orphan on. A bare `surveying-for-reuse` search would be
@@ -393,8 +506,14 @@ if [ -s "$C" ]; then
   # The `lenses_run` anchor carries the block's closing brace because that same line, verbatim,
   # also appears in the poster dispatch payload further down; without the brace this check would
   # stay green on the poster's copy with the arbitrator's deleted.
+  # The `lenses_run` clause used to carry the block's closing brace, because that line verbatim also
+  # appears in the POSTER payload further down and would otherwise stay green on the poster's copy
+  # with the arbitrator's deleted. The arbitrator block no longer ends there — `skill_path` and
+  # `schema_path` follow it — so the disambiguator moves to the field that follows: `lenses_run`
+  # immediately followed by `skill_path` occurs only here, since the poster's `lenses_run` is
+  # followed by `lenses_skipped`.
   grep_flat "$C" '"threshold": "<the value agreed in preflight step 7>",' \
-    && grep_flat "$C" '"lenses_run": ["<lens>", "..."] }'
+    && grep_flat "$C" '"lenses_run": ["<lens>", "..."], "skill_path":'
   check $? "conductor: the arbitrator dispatch payload carries threshold and lenses_run"
 
   # …and the remaining four, anchored as ONE contiguous span rather than per field. Per-field
@@ -404,14 +523,79 @@ if [ -s "$C" ]; then
   # green. The span starts at `finding_paths`, which appears in no other block, so removing any
   # field in it breaks the match. The cost is that a failure names the block rather than the field;
   # the comment above says which fields are load-bearing and why, which is what a reader needs.
-  grep_flat "$C" '"finding_paths": ["<each dispatched analyst'"'"'s output_path>"], "worktree": "<absolute path from preflight step 5>", "base_sha": "<from preflight step 3>", "head_sha": "<from preflight step 3>", "threshold": "<the value agreed in preflight step 7>", "lenses_run": ["<lens>", "..."]'
-  check $? "conductor: the arbitrator dispatch payload carries all six fields"
+  #
+  # Widened from six fields to eight after the first live run: `skill_path` and `schema_path` were
+  # added because the payload named a job and no document defining it, so the arbitrator was told to
+  # score against `scoring-rubric.md` with no way to resolve a relative citation from a directory
+  # nothing told it it was standing in. They sit at the end of the same contiguous span for the same
+  # reason the other six do — insertion breaks the match as surely as deletion.
+  grep_flat "$C" '"finding_paths": ["<each dispatched analyst'"'"'s output_path>"], "worktree": "<absolute path from preflight step 5>", "base_sha": "<from preflight step 3>", "head_sha": "<from preflight step 3>", "threshold": "<the value agreed in preflight step 7>", "lenses_run": ["<lens>", "..."], "skill_path": "<absolute path to the SKILL.md this dispatch names>", "schema_path": "<absolute path to finding-schema.md>"'
+  check $? "conductor: the arbitrator dispatch payload carries all eight fields"
 
   # `repo` was the one poster-payload field with a shape but no source: no preflight step produced
   # it, since step 1 read the origin URL only to detect the forge and step 3's `gh pr view` does
   # not request it. Anchored to the sentence in step 1 that makes the origin URL its provenance.
-  grep_flat "$C" 'it is the only place `repo` comes from'
+  grep_flat "$C" 'The path portion is the only place `repo` comes from'
   check $? "conductor: preflight step 1 is where repo comes from"
+
+  # …and the OTHER half of step 1, added after the first live run: the origin URL's HOST, exported
+  # as GITLAB_HOST before any glab call. Unset, every glab call targets gitlab.com, so step 2's
+  # `glab auth status` reports unauthenticated against a host the user has no account on and
+  # PREFLIGHT HALTS ON A CORRECTLY-CONFIGURED MACHINE. The word GITLAB_HOST appeared nowhere in the
+  # plugin before this. Two clauses: the export line itself (the only place the derivation is
+  # written down) and the consequence sentence, which is what stops a future editor deleting the
+  # line as redundant. The export is anchored on the sed pipeline, not on the bare variable name,
+  # which also appears in the surrounding prose.
+  grep_flat "$C" "export GITLAB_HOST=\$(printf '%s' \"\$ORIGIN\" | sed -e 's|^[a-z+]*://||' -e 's|^[^@]*@||' -e 's|[:/].*\$||')" \
+    && grep_flat "$C" 'preflight halts on a correctly-configured machine'
+  check $? "conductor: exports GITLAB_HOST from the origin host before any glab call"
+
+  # Preflight's cwd, and where .guardtower/ is rooted. The live conductor ran preflight in the
+  # PLUGIN repo, whose origin is a different remote entirely — so forge detection and PR resolution
+  # both answered about the wrong project without erroring. Anchored to the bolded sentence and to
+  # the artifact-root half, which is separately deletable and is what keeps run artifacts inside the
+  # tree Reconcile actually measures.
+  grep_flat "$C" '**Every step below runs with the working directory inside the repository under review**' \
+    && grep_flat "$C" '`.guardtower/<run>/` is rooted at that same repository'"'"'s root'
+  check $? "conductor: preflight runs in the repo under review, and roots .guardtower/ there"
+
+  # Step 3's resolve commands. `glab mr view <n>` returns title, state, author, labels, url and a
+  # comment count — none of the three shas, none of the changed paths — so the step named a command
+  # that cannot answer it. Three clauses: the GitLab API call that can, the diff_refs extraction
+  # that keeps the response out of this context, and the explicit statement that `glab mr view` is
+  # not the command. The third is what stops the first being "simplified" back.
+  grep_flat "$C" 'glab api "projects/$ENC_REPO/merge_requests/<n>"' \
+    && grep_flat "$C" 'json.load(sys.stdin)["diff_refs"]; print(r["base_sha"], r["start_sha"], r["head_sha"])' \
+    && grep_flat "$C" '**`glab mr view <n>` is not the command for this step**'
+  check $? "conductor: resolves the MR through the API that returns diff_refs, not glab mr view"
+
+  # start_sha's provenance and the reason it is not base_sha. Measured live: base_sha e2c4753,
+  # start_sha cdc22db, and start_sha changes on every push. Anchored to the sentence carrying the
+  # measured values — a bare `start_sha` search would be satisfied by the payload block, the
+  # command, or the Red flags item with this whole justification deleted, and the justification is
+  # precisely what stops a future editor collapsing the two fields back into one.
+  grep_flat "$C" '**`start_sha` comes from `diff_refs`, and it is not `base_sha`.**' \
+    && grep_flat "$C" 'a position built with `start_sha` set to `base_sha` matches no version at all and every inline comment is rejected'
+  check $? "conductor: resolves start_sha and says why it is not base_sha"
+
+  # Rule two's newest breach: `glab mr view` prints the entire MR description — ~2,500 words of
+  # architecture narrative on the live MR — into the very step that says the conductor never reads
+  # diff contents. Anchored to the bolded prohibition and to the reason, which is the half that
+  # distinguishes this from an arbitrary rule: it is not a diff, but it primes every downstream
+  # judgement all the same.
+  grep_flat "$C" '**The MR title and description must not enter this context.**' \
+    && grep_flat "$C" 'reading it primes every downstream judgement the conductor is supposed to make on the arbitrator'"'"'s numbers alone'
+  check $? "conductor: keeps the MR title and description out of its own context"
+
+  # The dependency link. A detached worktree is a clean checkout, so every gitignored dependency
+  # tree is absent — and both lenses that needed one lost findings to it on the live run. Three
+  # clauses: the symlink loop (the mechanism), the consequence sentence (why it is not optional),
+  # and the safety argument (why read-only reuse of the main checkout is allowed at all, which is
+  # the objection a future editor will raise before deleting it).
+  grep_flat "$C" 'ln -s "$MAIN/$dep" "$WORKTREE/$dep"' \
+    && grep_flat "$C" '**Without this, two lenses silently shrink.**' \
+    && grep_flat "$C" 'Read-only reuse of the main checkout'"'"'s dependency tree is safe: nothing in a run writes through the link.'
+  check $? "conductor: links the dependency tree into the worktree, read-only"
 fi
 
 # --- the conductor's dispatched reference document -----------------------------
@@ -461,6 +645,15 @@ if [ -s "$BRIEF" ]; then
   grep_flat "$BRIEF" 'The Kind line exists on every reuse finding, whatever its kind' \
     && grep_flat "$BRIEF" 'reimplements, duplicates or diverges, and NOT on one whose kind is'
   check $? "brief-template.md: scopes Kind to every reuse finding and Tier/Existing solution off extract"
+
+  # The arbitrator's dedup produces corroboration, and the brief is where it has to land: dedup that
+  # reports one entry and renders nothing about the other lenses is indistinguishable, to the
+  # reader, from dedup that threw them away. Two clauses for the same reason as the `Also at` pair
+  # above — the placeholder without the rule renders an empty label on every uncorroborated finding,
+  # and the rule without the placeholder governs a line the template does not have.
+  grep_flat "$BRIEF" '- **Corroborated by:** {{CORROBORATED_BY}}' \
+    && grep_flat "$BRIEF" 'The Corroborated by line exists only on a finding whose corroborated_by array is non-empty'
+  check $? "brief-template.md: renders corroborated_by, omitted when empty"
 fi
 
 # The reference documents' OWN cross-references, which check_skill never sees: it is called once per
@@ -634,6 +827,37 @@ if [ -s "$R" ]; then
   # `tier` produces the same drop from the other direction. Anchored to the bolded instruction.
   grep_flat "$R" '**Set none of those four on an `extract` finding**'
   check $? "reuse: an extract finding sets no tier or existing-solution fields"
+
+  # --- what the first live posting run exposed in this lens --------------------------------------
+  #
+  # The null-answer record. This skill calls it "load-bearing, not a footnote" and then gave it
+  # nowhere to live: the return format allowed one receipt line and the finding schema had no slot,
+  # so the live analyst returned its null candidates BY NAME to the conductor — breaching the
+  # context firewall to obey a rule this document had made mandatory. A record required to be
+  # produced and then structurally discarded guarantees that breach. Three clauses: the array
+  # itself in the return shape, the instruction to write it, and the prohibition on returning it
+  # instead, which is the half that names the failure it replaces.
+  grep_flat "$R" '"unanswered": [' \
+    && grep_flat "$R" '**The record has a place to go: the `unanswered` array in your output file.**' \
+    && grep_flat "$R" 'Do not put it in your receipt, and do not name a null candidate in your reply'
+  check $? "reuse: keeps the null-answer record in an unanswered array, not in its reply"
+
+  # …and that `unanswered` is a sibling of `findings`, not a finding. Without this the arbitrator's
+  # matching skip rule has nothing on this side agreeing with it, and an analyst that writes the
+  # array inside `findings` gets every entry scored or dropped as a claim it never made.
+  grep_flat "$R" '**`unanswered` is a sibling of `findings`, not a finding.**'
+  check $? "reuse: states that unanswered is a sibling of findings, never scored"
+
+  # The existing_solution red flag, amended. As written — "a finding whose existing_solution you
+  # have not opened and read" — it was UNSATISFIABLE BY CONSTRUCTION for an installed package on the
+  # live run, where the detached worktree contained no dependency tree at all and 3 of this lens's 4
+  # findings cited one; a compliant arbitrator would have dropped all three. Two clauses: the
+  # amended flag, and the body rule that keeps the allowance narrow now that the conductor links the
+  # dependency tree in — an installed package IS openable, and "documented signature" must not
+  # become the easy way out of reading it.
+  grep_flat "$R" 'A finding whose `existing_solution` you have neither opened and read, nor — where it has no source to open at all — cited a documented signature for.' \
+    && grep_flat "$R" '**Open the source wherever there is source to open**'
+  check $? "reuse: admits a documented signature only where nothing can be opened"
 fi
 
 # --- the security analyst ----------------------------------------------------
@@ -772,6 +996,77 @@ if [ -s "$B" ]; then
     && grep_flat "$B" 'verified, scored, and `composite` fell short of `threshold`.' \
     && grep_flat "$B" 'verified, scored, and cleared the gate.'
   check $? "arbitrator: keeps dropped and discarded distinct, including by field carriage"
+
+  # --- cross-lens dedup, added after the first live run ----------------------------------------
+  #
+  # That run's top two brief entries were security-003 at 92 and smell-006 at 90 — ONE defect, a
+  # migration whose resumability guard keys off a column type the DDL in the same file had already
+  # changed. A third case had three lenses on one thing. A reviewer who reads the same defect twice
+  # under two ids stops trusting the ranking, and the ranking is the only thing the gate is built on.
+  #
+  # The grouping rule itself, anchored to the sentence that defines the test. A bare "overlap" or
+  # "dedup" search would be satisfied by the section heading, the Red flags items, or the return
+  # shape with the rule deleted. Second clause pins the RANGE half — `target_line` is often a range,
+  # and a dedup implementation comparing single numbers silently never groups anything, which fails
+  # green.
+  grep_flat "$B" 'Two findings belong to the same group when their evidence covers the **same `target_file`** and their line spans **overlap**' \
+    && grep_flat "$B" 'a bare line is a span of one, and two spans overlap when each one'"'"'s start is at or before the other'"'"'s end'
+  check $? "arbitrator: groups findings by overlapping evidence spans, ranges included"
+
+  # The negative half of the definition, which is the half that keeps dedup honest. Without it the
+  # rule reads as "merge things that are near each other", and two unrelated defects in one file
+  # merge — after which only the representative is ever reported, so the other is gone for good.
+  # Two clauses: the worked counter-example and the bolded statement of what the test actually is.
+  grep_flat "$B" 'Two findings in the same file at unrelated lines are **two findings**' \
+    && grep_flat "$B" '**Overlap of the evidence spans is the test** — not proximity, not a shared file, not a shared theme'
+  check $? "arbitrator: says plainly what dedup is not"
+
+  # Fold, never discard. This is what turns a duplicate into evidence instead of noise, and it is
+  # the step most likely to be "simplified" into keeping the top score and dropping the rest — which
+  # would look identical in the return shape and lose the whole point. Three clauses: the
+  # representative rule, the fold instruction with the fields it carries, and the statement that a
+  # folded member is neither dropped nor discarded, which is what stops it being mislabelled.
+  grep_flat "$B" '**Keep the highest composite.** That finding represents the group' \
+    && grep_flat "$B" 'Each remaining member becomes an entry in the representative'"'"'s `corroborated_by`, carrying its `lens`, `id`, `target_line`, and its `claim` in its own words.' \
+    && grep_flat "$B" 'Folding a member in is neither dropping nor discarding it'
+  check $? "arbitrator: folds duplicates in as corroboration rather than discarding them"
+
+  # Where dedup sits in the order. Run it before scoring and there are no composites to choose a
+  # representative with; run it after the gate and one defect has already been counted twice on the
+  # way through, which is the failure it exists to prevent.
+  grep_flat "$B" 'Dedup runs after scoring because it needs composites to choose a representative, and before the gate'
+  check $? "arbitrator: runs dedup after scoring and before the gate"
+
+  # The fourth outcome. "Three outcomes, never conflated" was exhaustive and is no longer: a folded
+  # member was verified and scored, so calling it dropped or discarded is a lie in a different
+  # direction each time. Anchored to the bullet's own definition sentence.
+  grep_flat "$B" '**`corroborating`** — verified, scored, and folded into another finding'"'"'s group'
+  check $? "arbitrator: names corroborating as a fourth outcome, not a dropped or discarded one"
+
+  # The return shape's slot for it. The prose above could all survive with the field missing from
+  # the JSON, in which case the arbitrator has been told to fold findings into a field its own
+  # return format does not have — and the brief and the poster both read it from there.
+  grep_flat "$B" '"corroborated_by": [' \
+    && grep_flat "$B" '"claim": "<its claim, in its own words>"'
+  check $? "arbitrator: the return shape carries corroborated_by"
+
+  # The reuse lens's `unanswered` array is in the finding files this skill opens, and is not
+  # findings. Without this the arbitrator meets an array of search records where it expects
+  # findings and scores or drops them — either way inventing outcomes for things that were never
+  # claims.
+  grep_flat "$B" 'A finding file may also carry an `unanswered` array alongside `findings`' \
+    && grep_flat "$B" 'Those are **not findings**: do not verify, score, gate, or return them.'
+  check $? "arbitrator: skips the unanswered array instead of scoring it"
+
+  # The documented-signature allowance, the arbitrator's half of the vendor fix. Its verification
+  # rule says to open `existing_solution` — but a stdlib call, a platform API, and an uninstalled
+  # tier 2 package have no file to open, so the rule as written drops findings for being the kind of
+  # finding the reuse lens is explicitly allowed to make. Second clause keeps the allowance narrow:
+  # now that the conductor links the dependency tree in, an installed package IS openable and
+  # "documented signature" must not become the easy way out of reading it.
+  grep_flat "$B" 'Where `existing_solution` names something with **no file to open**' \
+    && grep_flat "$B" 'That allowance is narrow and does not extend to an installed dependency'
+  check $? "arbitrator: accepts a documented signature only where nothing can be opened"
 fi
 
 # --- the forge poster ---------------------------------------------------------
@@ -788,8 +1083,44 @@ if [ -s "$P" ]; then
   # invocations instead.
   grep_flat "$P" 'gh api "repos/$REPO/pulls/$PR/reviews"'
   check $? "poster: uses gh api for GitHub"
-  grep_flat "$P" 'glab api "projects/:id/merge_requests/$MR/discussions"'
+  grep_flat "$P" 'glab api "projects/$ENC_REPO/merge_requests/$MR/discussions"'
   check $? "poster: uses glab for GitLab"
+
+  # …and that it addresses the project EXPLICITLY. `projects/:id` resolves from the git remote of
+  # whatever directory the process is standing in, and a dispatched subagent's cwd is not guaranteed
+  # to be the repository under review — so `:id` can silently post this run's review onto a
+  # different project. The positive anchor above proves the encoded form is present; this negative
+  # one proves the old form is gone, which is the half a future "simplification" would undo. Both
+  # are needed: the encoded call could be added while a stray `:id` call survives elsewhere in the
+  # document.
+  #
+  # The negative is anchored on `api "projects/:id`, the INVOCATION, not on the bare path. Written
+  # bare it FAILS against a correct tree, which is how it was first written here and what running it
+  # caught: this skill names `projects/:id` twice in prose — once in the rule that forbids it and
+  # once in the Red flags list — because a plugin that may not describe the error it warns about is
+  # the same absurdity the jq check below rejects. Quoting the command form tests the command and
+  # leaves the prose free to explain it.
+  ! grep_flat "$P" 'api "projects/:id'
+  check $? "poster: never addresses the project as projects/:id"
+
+  grep_flat "$P" 'glab mr note "$MR" -R "$REPO"'
+  check $? "poster: passes -R to glab mr note, which has the same cwd dependency"
+
+  grep_flat "$P" '**`repo` must be URL-encoded**' \
+    && grep_flat "$P" '`oro/wastequip` is `oro%2Fwastequip`'
+  check $? "poster: states that repo must be URL-encoded, with the worked example"
+
+  # The third sha. The poster sent `position[start_sha]=$BASE_SHA`; measured live those are
+  # different values (e2c4753 against cdc22db) and start_sha changes on every push, so the position
+  # triple matched no stored diff version and EVERY inline comment was rejected — after which this
+  # skill's own no-fallback rule correctly killed the whole inline set. Three clauses: the position
+  # line as it must now read, the bolded rule, and the negative that the old wrong value is gone.
+  grep_flat "$P" '-f "position[start_sha]=$START_SHA"' \
+    && grep_flat "$P" '**`position[start_sha]` is `start_sha`, never `base_sha`.**'
+  check $? "poster: sends start_sha in the position triple, and says why it is not base_sha"
+
+  ! grep_flat "$P" 'position[start_sha]=$BASE_SHA'
+  check $? "poster: does not send base_sha as start_sha"
 
   # The brief's own literal check here is `grep -qi 'pending' "$P" || grep -qi 'single review'` —
   # and as written it carries a bug the plan already flagged: the second branch's grep has no file
@@ -830,25 +1161,39 @@ if [ -s "$P" ]; then
   grep_flat "$P" 'Never post a finding the user did not approve.'
   check $? "poster: refuses to post anything not approved"
 
-  # The gh heredoc delimiter is UNQUOTED on purpose: `<<'JSON'` suppresses every expansion inside
-  # the body, so `$HEAD_SHA` would post as that literal nine-character string and the review would
-  # attach to nothing. A future editor "fixing" the delimiter to the quoted form reintroduces that
-  # bug with every other check in this suite still green, so it gets both a positive and a negative
-  # assertion.
+  # The two checks that used to live here asserted the OPPOSITE of what is now correct, and they
+  # were right about the wrong thing. The gh review body was built in a heredoc with an unquoted
+  # delimiter so the shell would substitute `$HEAD_SHA` — and it does, but the same expansion also
+  # empties `$data` out of a rationale. The first live run's rationales contained `$data`,
+  # `$settings`, `$e`, `$connection`, backticks and double quotes, every one an ordinary identifier
+  # quoted in prose about the code: `$data` expands to nothing and deletes itself from the posted
+  # comment, and one `"` ends the JSON string and breaks the request. No delimiter choice serves
+  # both the sha and the text, so the two are separated — the text goes in as data through a QUOTED
+  # heredoc, the sha comes in through the environment inside python3, and `json.dumps` does the
+  # escaping. That keeps the no-jq property intact: python3 is already this plugin's stdlib JSON
+  # tool.
   #
-  # Both are anchored to `--input - <<JSON`, the actual command line, NOT to a bare `<<JSON`. That
-  # matters in both directions here. The bare positive would be satisfied by the prose sentence
-  # above the code block, which names the delimiter to explain the rule — so the whole gh code block
-  # could be deleted and the check would still pass. And the bare negative would FAIL against a
-  # correct tree, because that same explanatory sentence contains the string `<<'JSON'` verbatim as
-  # the thing it forbids; a plugin that may not spell out the mistake it is warning about is the
-  # same absurdity the jq check below rejects. Anchoring both to the invocation tests the command
-  # and leaves the prose free to describe it.
-  grep_flat "$P" '--input - <<JSON'
-  check $? "poster: the gh api heredoc delimiter is unquoted"
+  # Three positives — the quoted body heredoc, the python3 build, and json.dumps — because each is
+  # separately deletable and each is wrong alone: the quoted heredoc without python3 leaves the JSON
+  # hand-assembled and still breakable by a quote; python3 without the quoted heredoc leaves the
+  # shell to mangle the text before Python ever sees it.
+  grep_flat "$P" "BODY_1=\$(cat <<'GT_BODY'" \
+    && grep_flat "$P" "python3 - <<'GT_JSON' | gh api" \
+    && grep_flat "$P" 'print(json.dumps({'
+  check $? "poster: builds the review JSON with python3 from quoted heredocs"
 
-  ! grep_flat "$P" "--input - <<'JSON'"
-  check $? "poster: the gh api heredoc delimiter is not the quoted form"
+  # …and the negative that the unquoted form has not come back. Anchored to `--input - <<JSON`, the
+  # actual command line, not to a bare `<<JSON`: the prose above the block describes the bug it
+  # replaced, and a plugin that may not name the mistake it warns about is the same absurdity the jq
+  # check below rejects. Anchoring on the invocation tests the command and leaves the prose free.
+  ! grep_flat "$P" '--input - <<JSON'
+  check $? "poster: the review body is never built in an unquoted heredoc"
+
+  # The rule the mechanism serves, stated once so a future editor knows what the machinery is for.
+  # Without it the three positives above read as an arbitrary style, and the next person adding a
+  # second inline comment writes it the convenient way.
+  grep_flat "$P" '**Every body — inline or summary — is assembled into a shell variable from a quoted heredoc, and reaches a command only as `"$VAR"`.**'
+  check $? "poster: states the rule that finding text never reaches the shell as text"
 
   # The poster's own half of the dispatch contract: the paragraph that separates the five fields
   # this skill DECLARES as its interface from the four it is additionally handed, and says why each
@@ -865,8 +1210,31 @@ if [ -s "$P" ]; then
   # extras, and the justification without the declared-five sentence no longer distinguishes them
   # from the interface.
   grep_flat "$P" '`forge`, `pr_number`, `repo`, `approved`, and `head_sha` are this task'"'"'s declared interface.' \
-    && grep_flat "$P" 'are included alongside them because two requirements below cannot be met without them'
-  check $? "poster: distinguishes its declared interface from the four fields carried alongside"
+    && grep_flat "$P" 'are included alongside them because requirements below cannot be met without them'
+  check $? "poster: distinguishes its declared interface from the fields carried alongside"
+
+  # The poster's own half of the two fields the conductor's Post payload gained. The conductor's
+  # half is anchored below; this half is what makes the poster expect them, and without it a
+  # maintainer reading only this file sees eleven fields arrive with no statement of which are
+  # contractual. `start_sha` is the one that decides whether the inline set posts at all.
+  grep_flat "$P" '"start_sha": "<GitLab diff-version anchor — never equal to base_sha>",' \
+    && grep_flat "$P" '"skill_path": "<absolute path to the SKILL.md this dispatch names>",'
+  check $? "poster: declares start_sha and skill_path in what it receives"
+
+  # The corroboration the arbitrator's dedup produces has to survive all the way to the comment, or
+  # dedup silently becomes "report the highest and bin the rest". Two clauses: the body-format line
+  # and the omit-when-empty rule, the same two-sided shape the `Also at` check uses and for the same
+  # reason — the line without the rule renders an empty label on every uncorroborated finding, and
+  # the rule without the line governs something the template no longer has.
+  grep_flat "$P" 'Corroborated by: <corroborated_by, one "<lens> (<id>): <claim>" per entry, comma-joined>' \
+    && grep_flat "$P" 'The `Corroborated by` line appears only when `corroborated_by` is non-empty'
+  check $? "poster: renders corroborated_by in the comment body, omitted when empty"
+
+  # …and that the field is on the authoritative list this skill copies from the arbitrator. The
+  # render lines above are satisfied by prose; only the list decides whether the poster believes the
+  # field exists, and this file says outright that a field not on it "doesn't exist yet".
+  grep_flat "$P" '`in_diff`, `also_at`, `corroborated_by`, `value`, `urgency`, `composite`'
+  check $? "poster: lists corroborated_by among the fields the arbitrator assigns"
 fi
 
 # The poster reads base_sha, run_id, lenses_run and lenses_skipped, none of which are in its
@@ -888,10 +1256,24 @@ check $? "conductor: names the poster payload, not just the approved set"
 # load-bearing, and the closing one. Top-and-bottom alone would catch the block being deleted
 # wholesale but not gutted down to its middle, which is the same failure mode the rubric band-table
 # checks are anchored against.
+#
+# The middle run now carries `start_sha` and `skill_path` as well, both added after the first live
+# run. `start_sha` is the load-bearing one and cannot be re-derived anywhere downstream: it is not
+# `base_sha` (measured live at e2c4753 against cdc22db), it changes on every push, and without it
+# the poster has no correct value to send, so every inline comment is rejected and the poster's own
+# no-fallback rule then kills the whole inline set — a run that posts nothing inline from findings
+# the user already approved. Keeping them inside the contiguous span is what makes deletion of
+# either one break the match.
 grep_flat "$CONDUCTOR/SKILL.md" '"forge": "github | gitlab",' \
-  && grep_flat "$CONDUCTOR/SKILL.md" '"base_sha": "<from preflight step 3>", "head_sha": "<from preflight step 3>", "run_id": "<this run'"'"'s id>", "lenses_run": ["<lens>", "..."], "lenses_skipped": ["<lens>", "..."],' \
+  && grep_flat "$CONDUCTOR/SKILL.md" '"base_sha": "<from preflight step 3>", "head_sha": "<from preflight step 3>", "start_sha": "<from preflight step 3 — GitLab'"'"'s diff-version anchor, never base_sha>", "run_id": "<this run'"'"'s id>", "lenses_run": ["<lens>", "..."], "lenses_skipped": ["<lens>", "..."], "skill_path": "<absolute path to the SKILL.md this dispatch names>",' \
   && grep_flat "$CONDUCTOR/SKILL.md" '"approved": ["<the in-scope subset of the arbitrator'"'"'s passed array>"]'
 check $? "conductor: the poster dispatch payload block is present and complete"
+
+# …and the prose that says why start_sha in particular cannot be left out. The span above proves the
+# line is in the payload; nothing in it explains the field, and an unexplained field is the one a
+# future editor trims as duplication of base_sha — which is precisely the bug this closes.
+grep_flat "$CONDUCTOR/SKILL.md" '**`start_sha` is the third of GitLab'"'"'s three and the one nothing else can supply.**'
+check $? "conductor: says why start_sha cannot be re-derived downstream"
 
 # --- one authority for the numbers every document repeats ---------------------
 #

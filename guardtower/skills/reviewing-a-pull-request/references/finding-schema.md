@@ -9,13 +9,13 @@ This is the contract every analyst writes and the arbitrator reads.
 | `id` | yes | `<lens>-<nnn>` — `security-003`, `reuse-011`. Assigned by the arbitrator on merge |
 | `lens` | yes | `reuse`, `security`, or `smell` |
 | `target_file` | yes | Repo-relative path |
-| `target_line` | yes | Line or range the evidence sits at, at the head sha |
+| `target_line` | yes | Line or range the evidence sits at, at the head sha — `120`, or `120-127` |
 | `evidence` | yes | The actual source text at that location — what the arbitrator re-reads to confirm |
 | `claim` | yes | What is wrong, as an observable consequence |
 | `rationale` | yes | Why it matters, concretely: what breaks, for whom, how they find out |
 | `proposal` | yes | What to do instead. Prose, never a patch — guardtower does not modify code |
 | `in_diff` | yes | Whether `target_line` falls inside a diff hunk. Decides inline vs summary |
-| `also_at` | no | Further `file:line` locations for a finding spanning several files |
+| `also_at` | no | Further **occurrences** of the same pattern — `file:line` or `file:start-end` |
 | `kind` | every reuse finding | `reimplements`, `duplicates`, `diverges`, or `extract` — defined in `../../surveying-for-reuse/SKILL.md` |
 | `tier` | reuse, not `extract` | A JSON number, never a string: `1` already reachable, `2` not yet installed |
 | `existing_solution` | reuse, not `extract` | The thing that already does this: a repo path, a package plus the exact export, or a stdlib/platform API |
@@ -24,9 +24,10 @@ This is the contract every analyst writes and the arbitrator reads.
 | `value` | yes | 0–100, assigned by the arbitrator |
 | `urgency` | yes | 0–100, assigned by the arbitrator |
 | `composite` | yes | `round(0.6 × value + 0.4 × urgency)`, assigned by the arbitrator |
+| `corroborated_by` | no | Other lenses that found this same defect at the same span. Assigned by the arbitrator's dedup step |
 
-Analysts set everything except `id`, `value`, `urgency`, and `composite`. Those are the
-arbitrator's.
+Analysts set everything except `id`, `value`, `urgency`, `composite`, and `corroborated_by`. Those
+are the arbitrator's.
 
 ## Return shape
 
@@ -44,7 +45,7 @@ Write exactly this shape to your `findings/<lens>.json`:
       "rationale": "<what breaks, for whom, and how they find out>",
       "proposal": "<what to do instead — prose, never a patch>",
       "in_diff": true,
-      "also_at": ["<file:line>"],
+      "also_at": ["<file:line, or file:start-end>"],
 
       "kind": "<reuse lens: reimplements | duplicates | diverges | extract>",
       "tier": 1,
@@ -55,6 +56,13 @@ Write exactly this shape to your `findings/<lens>.json`:
   ]
 }
 ```
+
+One lens adds one top-level key beside `findings`: the reuse lens writes an **`unanswered`** array
+holding its null-answer search record — the candidates whose mandatory question came back empty,
+and what it searched to establish that. It sits in the file rather than in the return because that
+is the only place a record can be kept without entering the conductor's context; the arbitrator
+skips it. See `../../surveying-for-reuse/SKILL.md`'s Return format for its shape. No other lens
+writes it, and nothing else is ever added at that level.
 
 ## `kind` is the reuse lens's whole taxonomy
 
@@ -82,11 +90,14 @@ stated cost passes verification it should have been dropped by.
 
 ## What the arbitrator owns
 
-`id`, `value`, `urgency`, and `composite` are never set by an analyst. The arbitrator assigns
-`id` on merge, scores `value` and `urgency` against `scoring-rubric.md`, and computes
-`composite`. Emitting any of these four fields is an error, not a helpful extra — an analyst
-that guesses a score is inventing a number the arbitrator's rubric exists specifically to
-replace, and the conductor cannot tell a guessed score from a real one just by looking at it.
+`id`, `value`, `urgency`, `composite`, and `corroborated_by` are never set by an analyst. The
+arbitrator assigns `id` on merge, scores `value` and `urgency` against `scoring-rubric.md`, computes
+`composite`, and fills `corroborated_by` when its dedup step finds another lens reporting the same
+defect at an overlapping span. Emitting any of these five fields is an error, not a helpful extra —
+an analyst that guesses a score is inventing a number the arbitrator's rubric exists specifically to
+replace, and the conductor cannot tell a guessed score from a real one just by looking at it. You
+cannot fill `corroborated_by` even in principle: no lens can see another lens's findings, which is
+why deduping them is a step that happens after all three have returned.
 
 ## Evidence is not optional
 
@@ -96,12 +107,49 @@ what you wrote. A paraphrase fails that comparison exactly like evidence that ha
 the finding is dropped, and the work that produced it is wasted. If you cannot quote the line,
 you do not yet have a finding.
 
+## `target_line` is a span, and a range is the normal case
+
+**A range is valid wherever a line is, and it is written `start-end` — `120-127`, inclusive at both
+ends.** Write the span the evidence actually occupies: quoting eight lines of a method and citing
+`target_line: 120` tells the arbitrator to verify one line against eight lines of `evidence`, which
+is a comparison that fails for no reason but the notation. All three lenses emitted ranges on the
+first live run — a block of duplicated logic, a migration's guard clause, a nested conditional — and
+all three flagged the schema for not saying whether they were allowed to. They were; now it says
+so. `also_at` takes the same two forms, `file:line` and `file:start-end`.
+
+The one thing a range is not is a licence to widen. Cite the span your `evidence` quotes, not the
+enclosing function, because the span is what the arbitrator re-reads and what **Dedup across
+lenses** overlaps against — a range padded out to a whole class swallows every unrelated finding in
+it into one group.
+
+## `also_at` is occurrences, and nothing else
+
+**Every entry in `also_at` is a location where the same pattern this finding names actually
+occurs** — another copy of the duplicated logic, another site of the repeated shape. The arbitrator
+opens each one and confirms the claimed shape is there; an `extract` finding's occurrence count is
+computed from exactly this list, and a location that does not hold comes out of the count.
+
+That is the whole definition, and it is stated because the field was being used for two different
+things: further occurrences, and supporting material that corroborates the claim without being an
+occurrence of it — a caller, a config entry, a related test. Both render identically, and both the
+brief and the posted comment read `also_at` as *the same problem, also here*, so the second use
+makes a two-site problem look like a five-site one and inflates the occurrence count the extract
+bar is measured against. **Supporting material that is not an occurrence belongs in `rationale`,
+where it reads as the argument it is.** Cross-lens corroboration is a third thing again and is
+neither: the arbitrator builds it, in `corroborated_by`, and no analyst writes it.
+
 ## Where you read
 
 Every path you write or read is relative to the **worktree** the dispatch brief names — never
 the user's checked-out tree. The dispatch brief hands you the worktree path along with the base
 sha, head sha, and changed paths; read and cite locations there, not wherever your own working
 directory happens to be.
+
+**The dependency tree is reachable there.** A detached worktree is a clean checkout, so gitignored
+dependency directories would not exist in it; the conductor links `vendor/`, `node_modules/`,
+`.venv/` and their equivalents in from the main checkout before dispatching you. So an installed
+package's source is a file you can open and quote like any other, and a finding that rests on
+library behaviour is one you can actually make. Read them; never write through them.
 
 ## You are read-only
 

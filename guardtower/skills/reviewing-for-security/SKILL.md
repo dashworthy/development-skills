@@ -29,22 +29,25 @@ One dispatch per run:
   "base_sha": "<PR base sha>",
   "head_sha": "<PR head sha>",
   "changed_paths": ["<repo-relative path>", ...],
-  "repo_map": "<the mapper's return, verbatim>",
   "output_path": "<absolute path to .guardtower/<run>/findings/security.json>"
 }
 ```
 
-`repo_map` is the mapper's structured answer to "what already exists here" — modules and
-utilities, the dependency manifest, stdlib and platform APIs already in play, conventions, and
-test locations. Read it for context on established security-relevant conventions already in this
-repo — an existing auth middleware, an existing input-validation utility, an existing
-secrets-handling pattern — so you can tell a genuinely new risk from code that follows a pattern
-the repo has already vetted elsewhere. It does not replace reading the diff: every taxonomy item
-below is answered from the diff and the code it touches, not from `repo_map` alone.
+That is the whole brief. Nothing hands you a prepared survey of the repository; every taxonomy
+item below is answered from the diff and the code it touches, and you read further only when a
+specific question makes you. Two of those questions recur. For **dependency surface** — a new
+package, a version bump, a widened capability — read the **dependency manifest and its lock file**
+(`composer.json` + `composer.lock`, `package.json` + the lock, `go.mod` + `go.sum`, whichever this
+repo uses); the lock file is where a transitive package arrives without ever appearing in the
+diff. For **an existing mitigation** — an auth middleware, an input-validation helper, a
+secrets-handling pattern the repo already vetted — search the worktree for it at the moment you
+have a candidate to check it against, so you can tell a genuinely new risk from code following a
+pattern already in place. Neither is a scan you run up front.
 
-Every path in this brief, and every path you read, resolves **inside `worktree`** — never the
-user's checked-out tree. `changed_paths` and `repo_map` describe the code at `head_sha` inside
-that worktree; nothing you touch exists anywhere else.
+Every path in this brief, and every path you read or search, resolves **inside `worktree`** —
+never the user's checked-out tree. `changed_paths` describes the code at `head_sha` inside that
+worktree, and so does every manifest, lock file and source file you open; nothing you touch exists
+anywhere else.
 
 ## What counts as a finding here
 

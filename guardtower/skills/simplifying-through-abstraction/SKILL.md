@@ -29,22 +29,20 @@ One dispatch per run:
   "base_sha": "<PR base sha>",
   "head_sha": "<PR head sha>",
   "changed_paths": ["<repo-relative path>", ...],
-  "repo_map": "<the mapper's return, verbatim>",
   "output_path": "<absolute path to .guardtower/<run>/findings/abstraction.json>"
 }
 ```
 
-`repo_map` is the mapper's structured answer to "what already exists here" — modules and
-utilities, the dependency manifest, stdlib and platform APIs already in play, conventions, and
-test locations. Read it to locate occurrences of a pattern elsewhere in the repo that this diff's
-new code joins — a finding here often rests on occurrences outside the diff itself, per
-**Multi-file findings** below. It does not replace reading the diff: the occurrence count in
-**Abstraction is earned, never anticipated** is answered from the diff and the code it touches,
-not from `repo_map` alone.
+That is the whole brief. Nothing hands you a prepared survey of the repository, and you do not
+need one: the occurrence count in **Abstraction is earned, never anticipated** starts from the
+diff and the code it touches. Where a finding rests on occurrences outside the diff — per
+**Multi-file findings** below — get them by searching the worktree for that one pattern once you
+have it in hand, not by scanning the tree first and looking for patterns in what comes back. The
+search is per candidate pattern, and what it returns is the occurrence list the finding cites.
 
-Every path in this brief, and every path you read, resolves **inside `worktree`** — never the
-user's checked-out tree. `changed_paths` and `repo_map` describe the code at `head_sha` inside
-that worktree; nothing you touch exists anywhere else.
+Every path in this brief, and every path you read or search, resolves **inside `worktree`** —
+never the user's checked-out tree. `changed_paths` describes the code at `head_sha` inside that
+worktree, and so does every file you open; nothing you touch exists anywhere else.
 
 ## Abstraction is earned, never anticipated
 

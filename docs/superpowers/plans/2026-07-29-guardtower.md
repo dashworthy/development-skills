@@ -40,7 +40,6 @@ Every task's requirements implicitly include these. They come from the spec; the
 | `guardtower/skills/reviewing-a-pull-request/SKILL.md` | Conductor: preflight, worktree, dispatch, reconcile, triage |
 | `guardtower/skills/reviewing-a-pull-request/references/finding-schema.md` | Finding fields + return shape, shared by all four analysts |
 | `guardtower/skills/reviewing-a-pull-request/references/scoring-rubric.md` | Value/urgency anchors, composite, tie-break |
-| `guardtower/skills/reviewing-a-pull-request/references/mapping-the-repo.md` | Complete brief for the mapper subagent |
 | `guardtower/skills/reviewing-a-pull-request/references/brief-template.md` | Rendering template for `brief.md` |
 | `guardtower/skills/surveying-for-reuse/SKILL.md` | Reuse analyst — the aggressive build-vs-reuse challenge |
 | `guardtower/skills/reviewing-for-security/SKILL.md` | Security analyst |
@@ -337,7 +336,6 @@ git commit -m "feat(guardtower): finding schema and scoring rubric"
 
 **Files:**
 - Create: `guardtower/skills/reviewing-a-pull-request/SKILL.md`
-- Create: `guardtower/skills/reviewing-a-pull-request/references/mapping-the-repo.md`
 - Create: `guardtower/skills/reviewing-a-pull-request/references/brief-template.md`
 - Modify: `guardtower/tests/validate.sh`
 
@@ -352,7 +350,6 @@ git commit -m "feat(guardtower): finding schema and scoring rubric"
   "base_sha":      "<PR base sha>",
   "head_sha":      "<PR head sha>",
   "changed_paths": ["<repo-relative path>", ...],
-  "repo_map":      "<the mapper's return, verbatim>",
   "output_path":   "<absolute path to .guardtower/<run>/findings/<lens>.json>"
 }
 ```
@@ -401,7 +398,7 @@ check_skill() {
 check_skill reviewing-a-pull-request
 
 # $CONDUCTOR was defined by Task 2's block, which runs above this one.
-for ref in mapping-the-repo brief-template; do
+for ref in brief-template; do
   [ -s "$CONDUCTOR/references/$ref.md" ]; check $? "reference $ref.md exists"
 done
 
@@ -438,7 +435,7 @@ Body sections, in order:
 1. **The two rules** — copied verbatim from spec §The two rules, stated before anything else, as verity states its Iron Rule first.
 2. **Ask, don't configure** — threshold and lens selection are asked fresh every run; nothing is written for a later run to read. Name the concrete reason: verity's removed config layer accounted for ~15 of ~34 defects found during its build.
 3. **Context discipline** — the conductor holds the run's brief, verdicts and numbers. It does not read diffs, source files, or analyst findings. Every step needing to read one is dispatched. State that the arbitrator's return is the single permitted exception, and that reading it is required.
-4. **Preflight** — the eight numbered steps from spec §Preflight, verbatim in substance: detect forge; verify CLI; resolve PR (base sha, head sha, changed paths only); stop if nothing reviewable changed; fetch + `git worktree add --detach`; snapshot the main tree; dispatch the mapper; agree threshold and lenses. Include the exact commands:
+4. **Preflight** — the seven numbered steps from spec §Preflight, verbatim in substance: detect forge; verify CLI; resolve PR (base sha, head sha, changed paths only); stop if nothing reviewable changed; fetch + `git worktree add --detach`; snapshot the main tree before the first subagent of the run, whichever subagent that is; agree threshold and lenses. Include the exact commands:
    - `git remote get-url origin`
    - `gh auth status` / `glab auth status`
    - `gh pr view <n> --json baseRefOid,headRefOid,files` / `glab mr view <n>`
@@ -446,15 +443,13 @@ Body sections, in order:
    - `git worktree add --detach <tempdir> <head-sha>`
    - `git diff --numstat HEAD` and `git status --porcelain`
 5. **Run id** — the format and the `/dev/urandom` one-liner, verbatim from spec §Preflight. Include the note that this removes the last exception to "a run never looks at prior artifacts", so a future editor does not reintroduce a directory scan.
-6. **The pass** — dispatch one analyst per selected lens in parallel per `superpowers:dispatching-parallel-agents`, each with the dispatch brief from this task's Interfaces block. State plainly: **an analyst returns a receipt; if you find yourself reading a finding, the firewall has already failed.** Then dispatch `arbitrating-findings` — with the **whole** payload Task 8 declares, not just the paths: `finding_paths`, `worktree`, `base_sha`, `head_sha`, `threshold` (the value agreed at preflight step 8), `lenses_run`. Spell every field's provenance out in prose the way **Post** does for the poster, and say what breaks without `threshold` (the user's gate is silently discarded and the arbitrator falls back to its own default) and without `worktree` (evidence is verified against the user's checked-out tree instead of the detached one).
-7. **Reconcile** — spec §Reconciliation verbatim in substance: snapshot before the *first* subagent (the mapper), re-measure after the *last* (the arbitrator), compare counts not status entries, resolve symlinks with `readlink -f`, halt on anything outside `.guardtower/`, never auto-revert. Include the reason counts beat `git status`: a porcelain entry reads ` M path` identically before and after a write.
+6. **The pass** — dispatch one analyst per selected lens in parallel per `superpowers:dispatching-parallel-agents`, each with the dispatch brief from this task's Interfaces block. State plainly: **an analyst returns a receipt; if you find yourself reading a finding, the firewall has already failed.** Then dispatch `arbitrating-findings` — with the **whole** payload Task 8 declares, not just the paths: `finding_paths`, `worktree`, `base_sha`, `head_sha`, `threshold` (the value agreed at preflight step 7), `lenses_run`. Spell every field's provenance out in prose the way **Post** does for the poster, and say what breaks without `threshold` (the user's gate is silently discarded and the arbitrator falls back to its own default) and without `worktree` (evidence is verified against the user's checked-out tree instead of the detached one).
+7. **Reconcile** — spec §Reconciliation verbatim in substance: snapshot before the *first* subagent of the run, re-measure after the *last* (the arbitrator), compare counts not status entries, resolve symlinks with `readlink -f`, halt on anything outside `.guardtower/`, never auto-revert. State why the two ends are where they are: the check is a pair of measurements worth exactly what it encloses, so one snapshot and one re-measurement must bracket *every* subagent the run dispatches — today the first analyst through the arbitrator — rather than naming any one subagent as the boundary. Include the reason counts beat `git status`: a porcelain entry reads ` M path` identically before and after a write.
 8. **Triage** — present every finding that cleared the gate with its scores and rationale; the user marks each in scope or out of scope; write `approved.md` and `deferred.md`. Nothing is posted before this.
 9. **Post** — dispatch `posting-review-comments` with the approved set. Only on an explicit PR run, only after triage.
 10. **Cleanup** — `git worktree remove --force <tempdir>` on **every** exit path, including a halt. Then `git worktree prune`.
 11. **Reporting, always** — what was posted, what was dropped by evidence failure with reasons, what was discarded by the gate, and every lens the user chose not to run. Then invoke `superpowers:verification-before-completion`.
 12. **Red flags — STOP** — at minimum: reading a diff or a finding in the conductor's own context; switching the user's branch; running `gh pr checkout`; posting anything not marked in scope; auto-reverting a reconciliation violation; leaving the worktree behind; writing a config file "to make this more reliable next time"; reporting a threshold met without the numbers that prove it.
-
-Create `mapping-the-repo.md` — a complete brief for the mapper subagent, written to be handed over with no other instructions. It must specify: read only inside the worktree path given; produce existing modules and utilities (with paths), the dependency manifest and what is already installed, language stdlib/platform APIs in play, established conventions and patterns, and test locations; return a structured map, never a raw tree listing; write no files. Note explicitly that the reuse analyst is the primary consumer and cannot answer "does this already exist?" without it.
 
 Create `brief-template.md` — a `{{PLACEHOLDER}}` template mirroring `verity/skills/conducting-test-hardening/references/brief-template.md` in style. It must render: run id, PR reference, base and head sha, lenses run and lenses skipped, threshold; a summary count table (passed / dropped on evidence / discarded by gate); then one block per passed finding showing `{{ID}}`, lens, `{{COMPOSITE}}` with `{{VALUE}}`/`{{URGENCY}}` broken out, `{{TARGET_FILE}}:{{TARGET_LINE}}`, `in_diff`, `{{ALSO_AT}}`, claim, rationale, proposal, and — for reuse findings — `{{KIND}}`, `{{TIER}}`, `{{EXISTING_SOLUTION}}`, and `{{ADOPTION_COST}}`. Include HTML-comment instructions to omit reuse-only lines for non-reuse findings, as verity's template does, and to omit the Also at line for a finding whose `also_at` array is empty — an abstraction finding usually spans several files and `{{TARGET_FILE}}` names only the clearest, so a template with no `{{ALSO_AT}}` slot reports one occurrence of a problem found in five.
 
@@ -467,7 +462,7 @@ Expected: PASS — all checks `ok`, exit status `0`.
 
 ```bash
 git add guardtower/skills/reviewing-a-pull-request guardtower/tests/validate.sh
-git commit -m "feat(guardtower): conductor skill, repo mapper brief, brief template"
+git commit -m "feat(guardtower): conductor skill and brief template"
 ```
 
 ---
@@ -662,7 +657,7 @@ Body, in order:
 1. **You are read-only** — same framing as Task 4, stated first.
 2. **What you receive** — the dispatch brief fields.
 3. **A smell is a predicted failure, not a preference** — the defining rule. Every finding must name the concrete way this bites someone later: the change that will be made wrong, the bug that will be introduced, the reader who will misunderstand. *If the only thing you can say is that you would have written it differently, it is not a finding.*
-4. **Style is out of scope, and so is anything the project's own tooling owns** — formatting, import order, quote style, and naming conventions already enforced by a linter or formatter belong to that tool, not to guardtower. Check the repo map for what is configured before flagging anything a configured tool would have caught. Duplicating a linter produces noise the user has already decided about.
+4. **Style is out of scope, and so is anything the project's own tooling owns** — formatting, import order, quote style, and naming conventions already enforced by a linter or formatter belong to that tool, not to guardtower. Open the repo's linter and formatter configuration and see what is actually configured before flagging anything such a tool would have caught. Duplicating a linter produces noise the user has already decided about.
 5. **What to look for**, each with the failure it predicts: functions doing several unrelated things; parameter lists that encode a missing type; boolean flag parameters that split a function into two functions; deeply nested conditionals where a guard clause fits; primitive obsession where an invariant should be enforced by a type; mutable shared state across call boundaries; error handling that swallows the error or returns a sentinel a caller will forget to check; comments that describe *what* rather than *why*, and comments that no longer match the code; dead code and unreachable branches introduced by the diff; names that mislead about behaviour (a `get*` that mutates, an `is*` that returns a value).
 6. **Scope is the diff** — a smell in untouched code is not this PR's finding unless the diff made it materially worse. Say so plainly; otherwise every review reports the whole codebase.
 7. **Scoring input** — read `../reviewing-a-pull-request/references/scoring-rubric.md`. Note honestly that most smell findings score in the 40–69 value band and will not clear the gate, and that this is correct: the gate exists so a real defect is not buried under twelve preferences.
@@ -759,7 +754,7 @@ git commit -m "feat(guardtower): abstraction analyst"
 - Modify: `guardtower/tests/validate.sh`
 
 **Interfaces:**
-- Consumes: a dispatch payload of `finding_paths` (the `findings/<lens>.json` files by path, one per lens actually dispatched), `worktree`, `base_sha`, `head_sha`, `threshold`, and `lenses_run`; plus `finding-schema.md` and `scoring-rubric.md`. **The conductor must hand over all six** — `threshold` is the gate this skill applies (without it the value agreed at preflight step 8 is discarded and this skill falls back to its own default), and `worktree` is where `target_file` and `existing_solution` resolve (without it verification runs against the user's checked-out tree). Task 3's **The pass** is where that payload is written down.
+- Consumes: a dispatch payload of `finding_paths` (the `findings/<lens>.json` files by path, one per lens actually dispatched), `worktree`, `base_sha`, `head_sha`, `threshold`, and `lenses_run`; plus `finding-schema.md` and `scoring-rubric.md`. **The conductor must hand over all six** — `threshold` is the gate this skill applies (without it the value agreed at preflight step 7 is discarded and this skill falls back to its own default), and `worktree` is where `target_file` and `existing_solution` resolve (without it verification runs against the user's checked-out tree). Task 3's **The pass** is where that payload is written down.
 - Produces: to the conductor, the passed set plus counts —
 
 ```json

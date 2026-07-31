@@ -29,21 +29,23 @@ One dispatch per run:
   "base_sha": "<PR base sha>",
   "head_sha": "<PR head sha>",
   "changed_paths": ["<repo-relative path>", ...],
-  "repo_map": "<the mapper's return, verbatim>",
   "output_path": "<absolute path to .guardtower/<run>/findings/smell.json>"
 }
 ```
 
-`repo_map` is the mapper's structured answer to "what already exists here" — modules and
-utilities, the dependency manifest, stdlib and platform APIs already in play, conventions, and
-test locations. Read it for what tooling this repo already runs — a configured linter, a
-formatter, a style guide it enforces — before you flag anything that tool would already have
-caught; see **Style is out of scope** below. It does not replace reading the diff: every item in
-**What to look for** is answered from the diff and the code it touches, not from `repo_map` alone.
+That is the whole brief. Nothing hands you a prepared survey of the repository; every item in
+**What to look for** is answered from the diff and the code it touches. One further read is worth
+making, once, because this lens defers to configured tooling and cannot defer to what it has not
+looked at: **the repo's linter and formatter configuration** — `.eslintrc*`, `.php-cs-fixer*`,
+`phpcs.xml`, `.rubocop.yml`, `ruff.toml`, `.editorconfig`, a `lint`/`format` script in the package
+manifest, or whatever this repo carries. Read it before you flag anything a configured tool would
+already have caught; see **Style is out of scope** below. Anything else you need, search the
+worktree for when the question comes up, not up front.
 
-Every path in this brief, and every path you read, resolves **inside `worktree`** — never the
-user's checked-out tree. `changed_paths` and `repo_map` describe the code at `head_sha` inside
-that worktree; nothing you touch exists anywhere else.
+Every path in this brief, and every path you read or search, resolves **inside `worktree`** —
+never the user's checked-out tree. `changed_paths` describes the code at `head_sha` inside that
+worktree, and so does every config file and source file you open; nothing you touch exists
+anywhere else.
 
 ## A smell is a predicted failure, not a preference
 
@@ -61,9 +63,9 @@ first, in full, before you decide the smell is worth writing down at all — the
 ## Style is out of scope, and so is anything the project's own tooling owns
 
 Formatting, import order, quote style, and naming conventions already enforced by a linter or
-formatter belong to that tool, not to guardtower. Check the repo map for what is configured before
-flagging anything a configured tool would have caught. Duplicating a linter produces noise the
-user has already decided about.
+formatter belong to that tool, not to guardtower. Open the repo's linter and formatter
+configuration and see what is actually configured before flagging anything such a tool would have
+caught. Duplicating a linter produces noise the user has already decided about.
 
 This is narrower than "never comment on style." A repo with no configured formatter still has a
 real convention, and departing from it can still be a finding if you can name the failure per the

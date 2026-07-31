@@ -29,30 +29,44 @@ One dispatch per run:
   "base_sha": "<PR base sha>",
   "head_sha": "<PR head sha>",
   "changed_paths": ["<repo-relative path>", ...],
-  "repo_map": "<the mapper's return, verbatim>",
   "output_path": "<absolute path to .guardtower/<run>/findings/reuse.json>"
 }
 ```
 
-`repo_map` is the mapper's structured answer to "what already exists here" — modules and
-utilities, the dependency manifest, stdlib and platform APIs already in play, conventions, and
-test locations. You are this document's primary consumer: read it before you read the diff,
-because you cannot answer the mandatory question below from the diff alone.
+That is the whole brief. Nothing hands you a prepared survey of the repository, and nothing
+should: **existence-checking is a query, not a preload.** You do not map the codebase and then
+look for duplicates in the map; you take one candidate out of the diff and go looking for that one
+thing. Two files carry most of the answer and cost one read each — the **dependency manifest**
+(`composer.json`, `package.json`, `pyproject.toml`, `go.mod`, `Gemfile`, whatever this repo uses)
+says what the project can already reach, and its **lock file** gives the resolved versions and the
+transitive packages a direct dependency already pulls in with it. Those two are what separate tier
+1 from tier 2 below. Everything past them is a search you run at the moment you have something to
+search for, never a scan you do up front.
 
-Every path in this brief, and every path you read, resolves **inside `worktree`** — never the
-user's checked-out tree. `changed_paths` and `repo_map` describe the code at `head_sha` inside
-that worktree; nothing you touch exists anywhere else.
+Every path in this brief, and every path you read or search, resolves **inside `worktree`** —
+never the user's checked-out tree. `changed_paths` describes the code at `head_sha` inside that
+worktree, and so does every manifest, lock file and source file you open; nothing you touch exists
+anywhere else.
 
 ## The mandatory question
 
 For every new file, module, class, exported function, or utility this PR introduces, answer in
 writing: **what already does this?**
 
+Answering it is a search you run yourself, once per candidate, not a lookup in something handed to
+you. For each candidate: name the capability in the words you would search for, grep the worktree
+for those words and for the obvious synonyms, check the dependency manifest and lock file for a
+package that already provides it, and consider the language's stdlib and the platform APIs this
+project already sits on.
+
 A null answer — nothing already does this — is acceptable, but only together with the search that
-produced it: which paths in `repo_map` and the worktree you scanned, which manifest entries you
-checked, which stdlib or platform APIs you considered. **Silence is not a null answer.** An entry
-you never asked the question of is not evidence that nothing already does it; it is evidence you
-didn't look.
+produced it: which paths you searched and with what, which manifest entries you checked, which
+stdlib or platform APIs you considered. **That record is load-bearing, not a footnote.** It is the
+only thing separating "nothing already does this" from "I did not look", and the aggressive tier 1
+bar below rests on it entirely — an unsearched null answer makes every finding this lens did emit
+harder to trust, because it says the same lens also declined to look somewhere. **Silence is not a
+null answer.** An entry you never asked the question of is not evidence that nothing already does
+it; it is evidence you didn't look.
 
 This is not a finding you sometimes emit — it is a standing burden the lens carries for every new
 unit of code in the diff, whether or not it ends in a finding. Work through the list before you

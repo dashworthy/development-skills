@@ -27,12 +27,11 @@ flowchart TD
     F4 -->|no| STOPNONE["Nothing to review — stop"]
     F4 -->|yes| WT["Fetch the head ref and add a DETACHED<br/>worktree in a temp dir.<br/>Your branch is never switched"]
     WT --> SNAP["Snapshot the main tree: numstat + untracked.<br/>Taken before the FIRST subagent"]
-    SNAP --> MAP["Map the repo via subagent, inside the worktree:<br/>existing modules, stack, conventions"]
-    MAP --> AGREE["Agree the threshold — default 80 —<br/>and which lenses to run"]
+    SNAP --> AGREE["Agree the threshold — default 80 —<br/>and which lenses to run"]
     AGREE --> BRIEF
 
     subgraph PASS ["The pass — one iteration, never repeated"]
-        BRIEF["Dispatch brief: base sha, head sha,<br/>worktree path, changed paths, repo map"]
+        BRIEF["Dispatch brief: base sha, head sha,<br/>worktree path, changed paths"]
         BRIEF --> L1["surveying-for-reuse"]
         BRIEF --> L2["reviewing-for-security"]
         BRIEF --> L3["detecting-code-smell"]
@@ -99,19 +98,20 @@ what this tool does.
 Stated plainly, because an undocumented gap reads as an oversight and a documented one reads as a
 decision.
 
-**There is no enforcement hook.** Nothing mechanically stops a dispatched agent — the repo mapper,
-one of the four analysts, or the arbitrator — from writing outside `.guardtower/`. The worktree
-absorbs most of that risk, since anything written there is discarded with it at the end of the
-run. What remains is a write into your **main** tree, and nothing prevents the write itself.
+**There is no enforcement hook.** Nothing mechanically stops a dispatched agent — one of the four
+analysts, or the arbitrator — from writing outside `.guardtower/`. The worktree absorbs most of
+that risk, since anything written there is discarded with it at the end of the run. What remains
+is a write into your **main** tree, and nothing prevents the write itself.
 
 **Reconciliation catches a bad write after the fact, and never auto-reverts.** The conductor
 snapshots the main tree — `git diff --numstat HEAD` plus `git status --porcelain` — before
-dispatching the first subagent of the run (the repo mapper), and re-measures after the arbitrator
-returns, the last subagent of the pass. A path counts as touched when it's absent from the
-snapshot or its added/deleted counts differ from it. Anything that resolves outside
-`.guardtower/` halts the run and surfaces the offending paths, plus what changed in them between
-the snapshot and the re-measure, to you — it does not revert them. Reverting is destructive and
-cannot distinguish a bug worth diagnosing from evidence you need intact.
+dispatching the first subagent of the run, and re-measures after the arbitrator returns, the last
+subagent of the pass — one snapshot and one re-measurement bracketing every subagent the run
+dispatches. A path counts as touched when it's absent from the snapshot or its added/deleted
+counts differ from it. Anything that resolves outside `.guardtower/` halts the run and surfaces
+the offending paths, plus what changed in them between the snapshot and the re-measure, to you —
+it does not revert them. Reverting is destructive and cannot distinguish a bug worth diagnosing
+from evidence you need intact.
 
 **The 80 gate is deliberately narrow.** Composite score is `round(0.6 × value + 0.4 × urgency)`,
 and clearing 80 requires `value 80 + urgency 80` or better. Most findings will not clear it, and

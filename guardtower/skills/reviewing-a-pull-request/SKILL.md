@@ -41,10 +41,9 @@ reports, and everything it renders into `brief.md`, comes from that one return v
 
 Six named skills get dispatched over the course of a run: one of `surveying-for-reuse`,
 `reviewing-for-security`, `detecting-code-smell`, `simplifying-through-abstraction` per selected
-lens; then `arbitrating-findings`; then, only after triage, `posting-review-comments`. One more
-dispatch follows a **reference document** instead of a skill name, because the work it does —
-mapping the repo — belongs out of the conductor's context but isn't reusable in its own right:
-hand a subagent `references/mapping-the-repo.md` as its complete brief.
+lens; then `arbitrating-findings`; then, only after triage, `posting-review-comments`. That list is
+exhaustive: every dispatch a run makes follows one of those named skills, and nothing else is
+dispatched.
 
 ## Preflight
 
@@ -64,8 +63,8 @@ branch:
    the run stops anyway, because reconciliation cannot tell a harmless worktree from a real
    violation by path alone. `mktemp -d` puts it out of reach of that test entirely, which is why
    it is the instruction rather than "pick a path under `.guardtower/`". See **Reconcile**.
-3. Analysts and the mapper read **inside that worktree**. The `<base-sha>...<head-sha>` diff is
-   computed there too.
+3. Analysts read **inside that worktree** — the diff, and every manifest, config file or source
+   file they open to answer a question. The `<base-sha>...<head-sha>` diff is computed there too.
 4. Remove the worktree at the end of the run, on every exit path including a halt — see
    **Cleanup**.
 
@@ -90,15 +89,9 @@ it. And reconciliation therefore only has to watch the **main** tree — see **R
 4. **Stop if nothing reviewable changed.** Say so plainly and exit.
 5. **Fetch and add the detached worktree**, per **The worktree** above.
 6. **Snapshot the main tree** — `git diff --numstat HEAD` and `git status --porcelain` — before
-   dispatching the first subagent of the run, so the mapper is inside the check too.
-7. **Map the repo.** Dispatch one subagent with `references/mapping-the-repo.md` as its complete
-   brief, together with its payload: `worktree` — the absolute path from step 5 — and `head_sha` —
-   from step 3. The document itself defines neither; it expects both handed to it and its own stop
-   list forbids mapping at any other commit, so dispatching it without this payload leaves it
-   nothing to read. It returns existing modules and utilities, stack, conventions, and test
-   locations — never a raw tree listing. The reuse analyst cannot answer "does this already exist?"
-   from the diff alone, and mapping once beats four analysts each re-scanning the tree.
-8. **Agree the gate.** Offer the default threshold of 80 and all four lenses; let the user
+   dispatching the **first** subagent of the run, whichever subagent that is, so that no dispatch
+   this run makes falls outside the check. See **Reconcile**.
+7. **Agree the gate.** Offer the default threshold of 80 and all four lenses; let the user
    override either. Persist neither. A lens the user drops is not dispatched, and is named in the
    final report, so a short brief is never mistaken for a clean one.
 
@@ -134,7 +127,6 @@ receives exactly this dispatch brief:
   "base_sha":      "<PR base sha>",
   "head_sha":      "<PR head sha>",
   "changed_paths": ["<repo-relative path>", ...],
-  "repo_map":      "<the mapper's return, verbatim>",
   "output_path":   "<absolute path to .guardtower/<run>/findings/<lens>.json>"
 }
 ```
@@ -156,13 +148,13 @@ payload:
   "worktree":      "<absolute path from preflight step 5>",
   "base_sha":      "<from preflight step 3>",
   "head_sha":      "<from preflight step 3>",
-  "threshold":     "<the value agreed in preflight step 8>",
+  "threshold":     "<the value agreed in preflight step 7>",
   "lenses_run":    ["<lens>", "..."]
 }
 ```
 
 Name every field. `threshold` is not optional decoration: it is the gate the arbitrator applies,
-and preflight step 8 exists precisely so the user can move it. Hand over the paths alone, and the
+and preflight step 7 exists precisely so the user can move it. Hand over the paths alone, and the
 number the user agreed is silently discarded — the arbitrator falls back to the `80` in its own
 example dispatch — so "agree the gate" becomes decorative. `worktree` is where the arbitrator
 resolves `target_file` and `existing_solution`, never the user's checked-out tree; without it,
@@ -171,8 +163,8 @@ user's own possibly-dirty checkout, and the single step this whole design rests 
 verdict it never actually verified. `base_sha` and `head_sha` fix the revision verification runs
 against, and `lenses_run` is the sanity check that `finding_paths` holds exactly one entry per lens
 actually dispatched. A conductor that hands over only the paths is telling the arbitrator to
-consult five fields it was never given — the same gap the mapper dispatch had before preflight
-step 7 spelled its payload out, and the poster's had before **Post** did.
+consult five fields it was never given — the same gap the poster's dispatch had before **Post**
+spelled its payload out.
 
 It reads the finding files itself, verifies each one's evidence against the worktree at the head
 sha, scores and gates what holds per `references/scoring-rubric.md`, and returns exactly three
@@ -189,11 +181,15 @@ Analysts are read-only by instruction, but nothing mechanically stops a dispatch
 writing. The worktree absorbs most of that risk, since a write there is discarded with it. What
 remains is a write into the **main** tree:
 
-- The snapshot from **Preflight** step 6 was taken **before the first subagent of the run — the
-  mapper**, not just before the analysts. Re-measure `git diff --numstat HEAD` and `git status
-  --porcelain` again **after the arbitrator returns** — the last subagent of the pass. One
-  snapshot and one re-measurement bracket every subagent the run dispatches: mapper, analysts,
-  arbitrator. Reconciling any earlier would leave the arbitrator outside the only check there is.
+- The snapshot from **Preflight** step 6 was taken **before the first subagent of the run**, and
+  re-measurement happens **after the arbitrator returns** — the last subagent of the pass. The
+  reason is the bracket, not the identity of either subagent: this check is a pair of
+  measurements, and it is worth exactly what it encloses. **One snapshot and one re-measurement
+  must bracket every subagent the run dispatches**, leaving none of them outside. Today the first
+  is the first analyst and the last is the arbitrator, so those are the two ends; if a run ever
+  dispatches something earlier or later, the snapshot and the re-measurement move out to it rather
+  than the bracket closing in. Reconciling any earlier would leave the arbitrator outside the only
+  check there is, and snapshotting any later would leave whatever ran first outside it.
 - A path is **touched** when it is absent from the snapshot, or when its added/deleted counts
   differ from the snapshot's. **Counts, not `git status` alone**: a porcelain entry for an
   already-modified file reads ` M path` both before and after a write, so a status-only comparison
@@ -244,7 +240,7 @@ Name every field. `base_sha` is not optional decoration: GitLab's discussion API
 alongside `head_sha` to anchor a diff position, and `run_id`, `lenses_run` and `lenses_skipped` are
 what let the summary comment name the run and admit which lenses were skipped. A poster handed only
 the approved set is told by its own instructions to consult fields it was never given — the same
-gap the mapper dispatch had before preflight step 7 spelled its payload out.
+gap the arbitrator's dispatch had before **The pass** spelled its payload out.
 
 This happens only because guardtower is a PR-only tool to begin with — there is no local-diff mode
 to post from by accident — and only after triage; nothing is dispatched until the user has marked

@@ -230,7 +230,7 @@ check_skill() {
 check_skill reviewing-a-pull-request
 
 # $CONDUCTOR was defined by Task 2's block, which runs above this one.
-for ref in mapping-the-repo brief-template; do
+for ref in brief-template; do
   [ -s "$CONDUCTOR/references/$ref.md" ]; check $? "reference $ref.md exists"
 done
 
@@ -292,15 +292,33 @@ if [ -s "$C" ]; then
   # declares it receives, so the skill is told to consult fields it was never given, and nothing in
   # the suite noticed because no single task's diff contained both ends.
   #
-  # The mapper's, from preflight step 7. Both clauses, not just one: the payload clause alone can
-  # be deleted while the explanation survives and vice versa, and each was separately green before
-  # this check existed.
-  grep_flat "$C" 'together with its payload: `worktree` — the absolute path from step 5 — and `head_sha` — from step 3.' \
-    && grep_flat "$C" 'dispatching it without this payload leaves it nothing to read'
-  check $? "conductor: names the mapper payload, not just the reference document"
+  # The analysts', from **The pass**. Anchored as ONE contiguous span — from `worktree` through the
+  # opening of `output_path` — and asserted against the conductor AND all four analyst skills with
+  # the same string, because this is the one payload that has to agree in five places at once: the
+  # conductor renders it, and each analyst declares it under "What you receive". Five independent
+  # per-file anchors would each prove its own file says something; only a shared span proves the
+  # five say the same thing, which is the drift this suite has been bitten by before.
+  #
+  # The span starts at `worktree` and stops inside `output_path`'s value because those are the
+  # boundaries of what is genuinely common: `lens` carries the four-way alternation in the
+  # conductor and a single literal in each analyst, and `output_path` ends in `<lens>.json` versus
+  # `reuse.json`/`security.json`/`smell.json`/`abstraction.json`. Being contiguous, it catches
+  # insertion as well as deletion — a field added anywhere between `worktree` and `output_path`
+  # breaks the match in whichever document gained it.
+  BRIEF_SPAN='"worktree": "<absolute path to the detached worktree>", "base_sha": "<PR base sha>", "head_sha": "<PR head sha>", "changed_paths": ["<repo-relative path>", ...], "output_path": "<absolute path to .guardtower/<run>/findings/'
+  miss=""
+  for doc in "$C" \
+             "$PLUGIN/skills/surveying-for-reuse/SKILL.md" \
+             "$PLUGIN/skills/reviewing-for-security/SKILL.md" \
+             "$PLUGIN/skills/detecting-code-smell/SKILL.md" \
+             "$PLUGIN/skills/simplifying-through-abstraction/SKILL.md"; do
+    [ -s "$doc" ] && grep_flat "$doc" "$BRIEF_SPAN" || miss="$miss ${doc#"$PLUGIN"/}"
+  done
+  [ -z "$miss" ]
+  check $? "the analyst dispatch brief agrees field-for-field across the conductor and all four analysts (mismatched:$miss)"
 
   # The arbitrator's. `threshold` and `worktree` are the load-bearing two: without the first, the
-  # gate the user agreed at preflight step 8 is silently discarded and the arbitrator falls back to
+  # gate the user agreed at preflight step 7 is silently discarded and the arbitrator falls back to
   # its own example value; without the second, evidence is verified against the user's checked-out
   # tree instead of the detached worktree — a silent wrong answer from the step the whole design
   # rests on. Anchored to the paragraph that names them, not to the field names, which also appear
@@ -313,14 +331,14 @@ if [ -s "$C" ]; then
   # deletion. That reasoning is right for what it covers and covers only one of two halves: deleting
   # the `threshold` and `lenses_run` lines FROM the JSON block, leaving the prose untouched, left the
   # whole suite at PASS, exit 0 — proven by mutation. `threshold` is the one that matters most: it is
-  # the gate the user agreed at preflight step 8, and losing it from the rendered payload is exactly
+  # the gate the user agreed at preflight step 7, and losing it from the rendered payload is exactly
   # the silent discard the prose above exists to prevent, with the sentence forbidding it still on
   # the page. Two clauses, one per field, since each line is separately deletable.
   #
   # The `lenses_run` anchor carries the block's closing brace because that same line, verbatim,
   # also appears in the poster dispatch payload further down; without the brace this check would
   # stay green on the poster's copy with the arbitrator's deleted.
-  grep_flat "$C" '"threshold": "<the value agreed in preflight step 8>",' \
+  grep_flat "$C" '"threshold": "<the value agreed in preflight step 7>",' \
     && grep_flat "$C" '"lenses_run": ["<lens>", "..."] }'
   check $? "conductor: the arbitrator dispatch payload carries threshold and lenses_run"
 
@@ -331,7 +349,7 @@ if [ -s "$C" ]; then
   # green. The span starts at `finding_paths`, which appears in no other block, so removing any
   # field in it breaks the match. The cost is that a failure names the block rather than the field;
   # the comment above says which fields are load-bearing and why, which is what a reader needs.
-  grep_flat "$C" '"finding_paths": ["<each dispatched analyst'"'"'s output_path>"], "worktree": "<absolute path from preflight step 5>", "base_sha": "<from preflight step 3>", "head_sha": "<from preflight step 3>", "threshold": "<the value agreed in preflight step 8>", "lenses_run": ["<lens>", "..."]'
+  grep_flat "$C" '"finding_paths": ["<each dispatched analyst'"'"'s output_path>"], "worktree": "<absolute path from preflight step 5>", "base_sha": "<from preflight step 3>", "head_sha": "<from preflight step 3>", "threshold": "<the value agreed in preflight step 7>", "lenses_run": ["<lens>", "..."]'
   check $? "conductor: the arbitrator dispatch payload carries all six fields"
 
   # `repo` was the one poster-payload field with a shape but no source: no preflight step produced
@@ -341,37 +359,12 @@ if [ -s "$C" ]; then
   check $? "conductor: preflight step 1 is where repo comes from"
 fi
 
-# --- the two conductor reference documents ------------------------------------
+# --- the conductor's dispatched reference document -----------------------------
 #
-# Both had existence checks and nothing else: reducing either file to the single character "x" on a
-# scratch copy left the suite reporting 105 ok, PASS. That is not a small gap in either case.
-# mapping-the-repo.md is the mapper's COMPLETE brief — it is handed to a subagent with no other
-# instructions, so every rule in it (read only in the worktree, map at head_sha, return a structured
-# map, write nothing) is the only thing standing between the mapper and reading the user's checked-out
-# tree at the wrong commit. brief-template.md is the render contract between the arbitrator's return
-# and the human doing triage; a placeholder missing from it is a column missing from the only
-# document the human decides on.
-
-MAP="$CONDUCTOR/references/mapping-the-repo.md"
-if [ -s "$MAP" ]; then
-  grep_flat "$MAP" 'Read only **inside the worktree path** your dispatch brief names'
-  check $? "mapping-the-repo.md: reads only inside the worktree it was given"
-
-  grep_flat "$MAP" 'The dispatch brief also names `head_sha`; map the tree **at that commit**'
-  check $? "mapping-the-repo.md: maps at head_sha, not at whatever is checked out"
-
-  grep_flat "$MAP" 'Return a **structured map**, never a raw tree listing.'
-  check $? "mapping-the-repo.md: returns a structured map, never a tree dump"
-
-  grep_flat "$MAP" 'You do not write anything — not a report, not a cache, not a scratch note.'
-  check $? "mapping-the-repo.md: writes no files"
-
-  # Line-anchored on purpose, exactly as check_skill's equivalent is: this asserts the heading and
-  # therefore the section, and a flattened search would also be satisfied by the phrase appearing in
-  # body prose with the stop list itself deleted.
-  grep -q '^## Red flags — STOP' "$MAP"
-  check $? "mapping-the-repo.md: has a 'Red flags — STOP' section"
-fi
+# brief-template.md had an existence check and nothing else: reducing it to the single character "x"
+# on a scratch copy left the suite reporting 105 ok, PASS. That is not a small gap — it is the render
+# contract between the arbitrator's return and the human doing triage, so a placeholder missing from
+# it is a column missing from the only document the human decides on.
 
 BRIEF="$CONDUCTOR/references/brief-template.md"
 if [ -s "$BRIEF" ]; then
@@ -544,7 +537,7 @@ if [ -s "$M" ]; then
 
   # The brief's own literal check here is `grep -qi 'formatter\|linter'` — also known-bad: both
   # words recur standalone outside the "Style is out of scope" section (e.g. "What you receive"
-  # instructs reading repo_map for a configured linter or formatter, and the Red flags item names
+  # instructs reading the repo's linter and formatter configuration, and the Red flags item names
   # both again), so an unanchored search would still pass with the section's substantive deferral
   # rule deleted and only those other, unrelated mentions left standing. Anchored instead to the
   # section's own normative sentence naming both tools together.
@@ -742,9 +735,9 @@ fi
 
 # The poster reads base_sha, run_id, lenses_run and lenses_skipped, none of which are in its
 # declared interface. The conductor must therefore name them at the dispatch site, or the poster is
-# told to consult fields it was never given - the same gap the mapper dispatch had. Anchored to the
-# sentence that makes the requirement explicit, not to the field names, which also appear in the
-# JSON block and would survive its deletion.
+# told to consult fields it was never given - the same gap the arbitrator's dispatch had. Anchored
+# to the sentence that makes the requirement explicit, not to the field names, which also appear in
+# the JSON block and would survive its deletion.
 grep_flat "$CONDUCTOR/SKILL.md" 'Name every field. `base_sha` is not optional decoration'
 check $? "conductor: names the poster payload, not just the approved set"
 

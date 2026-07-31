@@ -42,12 +42,11 @@ flowchart TD
     F4 -->|no| STOPNONE["Nothing to review — stop"]
     F4 -->|yes| WT["Fetch the head ref and add a DETACHED<br/>worktree in a temp dir.<br/>Your branch is never switched"]
     WT --> SNAP["Snapshot the main tree: numstat + untracked.<br/>Taken before the FIRST subagent"]
-    SNAP --> MAP["Map the repo via subagent, inside the worktree:<br/>existing modules, stack, conventions"]
-    MAP --> AGREE["Agree the threshold — default 80 —<br/>and which lenses to run"]
+    SNAP --> AGREE["Agree the threshold — default 80 —<br/>and which lenses to run"]
     AGREE --> BRIEF
 
     subgraph PASS ["The pass — one iteration, never repeated"]
-        BRIEF["Dispatch brief: base sha, head sha,<br/>worktree path, changed paths, repo map"]
+        BRIEF["Dispatch brief: base sha, head sha,<br/>worktree path, changed paths"]
         BRIEF --> L1["surveying-for-reuse"]
         BRIEF --> L2["reviewing-for-security"]
         BRIEF --> L3["detecting-code-smell"]
@@ -93,8 +92,8 @@ So guardtower never reads the PR through your working tree and never switches yo
 1. Fetch the head ref — `git fetch origin pull/<n>/head` on GitHub, `git fetch origin
    merge-requests/<n>/head` on GitLab. Both resolve fork-sourced changes.
 2. `git worktree add --detach <tempdir> <head-sha>` — a second checkout in a temp directory.
-3. Analysts and the mapper read **inside that worktree**. The `<base-sha>...<head-sha>` diff is
-   computed there too.
+3. Analysts read **inside that worktree** — the diff, and every manifest, config file or source
+   file they open to answer a question. The `<base-sha>...<head-sha>` diff is computed there too.
 4. Remove the worktree at the end of the run, on every exit path including a halt.
 
 Consequences worth stating: your branch, your index, and your uncommitted work are untouched for
@@ -117,9 +116,9 @@ worktree is discarded; and reconciliation therefore only has to watch the **main
 `reviewing-a-pull-request`. The flow lives in the skill, not the command, so it is readable and
 testable in one place.
 
-The repo mapper is a **reference document**, not a skill — following verity's precedent that work
-belonging out of the conductor's context but not reusable in its own right ships as a reference
-handed to a subagent as its complete brief.
+The skills table above is the whole dispatch set: every subagent a run dispatches runs one of the
+six entries marked *subagent*. Nothing is dispatched against a reference document instead of a
+skill.
 
 The four analysts are separate skills rather than one lens-parameterised skill because their
 domain guidance genuinely differs (a vulnerability taxonomy has nothing in common with a
@@ -143,12 +142,9 @@ the code and measures nothing, so a second iteration would re-derive identical f
 4. **Stop if nothing reviewable changed.** Say so plainly and exit.
 5. **Fetch and add the detached worktree**, per **The worktree** above.
 6. **Snapshot the main tree** — `git diff --numstat HEAD` and `git status --porcelain` — before
-   dispatching the first subagent, so the mapper is inside the check too.
-7. **Map the repo.** Dispatch one subagent with `references/mapping-the-repo.md` as its complete
-   brief, pointed at the worktree. It returns existing modules and utilities, stack, conventions,
-   test locations. The reuse analyst cannot answer "does this already exist?" from the diff alone,
-   and mapping once beats four analysts each re-scanning the tree.
-8. **Agree the gate.** Offer the default threshold of 80 and all four lenses; let the user
+   dispatching the **first** subagent of the run, whichever subagent that is, so that no dispatch
+   this run makes falls outside the check.
+7. **Agree the gate.** Offer the default threshold of 80 and all four lenses; let the user
    override either. Persist neither. A lens the user drops is not dispatched and is named in the
    final report, so a short brief is never mistaken for a clean one.
 
@@ -177,8 +173,15 @@ actually dispatched), the `worktree`, `base_sha`, `head_sha`, the `threshold` ag
 and `lenses_run`. It reads the paths itself, verifies and scores, and returns the items that
 cleared the gate.
 
+**Nothing is preloaded for them.** No subagent runs ahead of the analysts to survey the repository
+on their behalf. Each analyst reads a manifest or searches the worktree at the moment it has a
+question: existence-checking is a query, not a preload. A survey would also have to be rebuilt
+from scratch on every run — guardtower deliberately persists nothing between runs — so the same
+derived artifact would be re-derived for a codebase that has barely changed, and most of what it
+contained would answer questions no analyst had asked.
+
 **Paths alone are not the dispatch.** Two of those fields are load-bearing and neither can be
-re-derived downstream: without `threshold` the gate the user agreed in preflight step 8 is
+re-derived downstream: without `threshold` the gate the user agreed in preflight step 7 is
 silently discarded and the arbitrator falls back to its own default, making that step decorative;
 without `worktree` the arbitrator resolves `target_file` and `existing_solution` against whatever
 tree it happens to be standing in — the user's own checkout — so evidence verification, the step
@@ -212,11 +215,15 @@ verity documents. The worktree absorbs most of the risk, since a write there is 
 What remains is a write into the **main** tree:
 
 - Snapshot `git diff --numstat HEAD` and `git status --porcelain` **before dispatching the first
-  subagent of the run — the mapper**, not just before the analysts. The mapper is read-only by
-  instruction and unguarded by anything else, exactly like an analyst.
-- Re-measure **after the arbitrator returns** — the last subagent of the pass. One snapshot and
-  one re-measurement then bracket every subagent the run dispatches: mapper, analysts, arbitrator.
-  Reconciling earlier would leave the arbitrator outside the only check there is. A path is
+  subagent of the run**, whichever subagent that is. Every dispatched subagent is read-only by
+  instruction and unguarded by anything else, so none of them may sit outside the measurement.
+- Re-measure **after the arbitrator returns** — the last subagent of the pass. The reason is the
+  bracket, not the identity of either end: this check is a pair of measurements and is worth
+  exactly what it encloses, so **one snapshot and one re-measurement must bracket every subagent
+  the run dispatches**. Today the first is the first analyst and the last is the arbitrator; a run
+  that ever dispatches something earlier or later moves the snapshot and the re-measurement out to
+  it rather than narrowing the bracket. Reconciling earlier would leave the arbitrator outside the
+  only check there is, and snapshotting later would leave whatever ran first outside it. A path is
   **touched** when it is absent from the snapshot or when its added/deleted counts differ from the
   snapshot's.
 - Resolve every touched path with `readlink -f` (or `cd "$(dirname …)" && pwd -P`) before
@@ -272,7 +279,10 @@ all, and it is deliberately the most aggressive of the four.
 PR introduces, the analyst must answer in writing: *what already does this?* A null answer is
 acceptable only with the search that produced it — which paths were scanned, which manifest
 entries were checked, which stdlib or platform APIs were considered. **Silence is not a null
-answer.** This is a burden the lens always carries, not a finding it sometimes emits.
+answer.** That search is the analyst's own, run once per candidate rather than looked up in
+anything handed to it, and the record of it is load-bearing: it is the only thing separating
+"nothing already does this" from "I did not look". This is a burden the lens always carries, not a
+finding it sometimes emits.
 
 **Two tiers, deliberately asymmetric.**
 
@@ -416,7 +426,6 @@ guardtower/
   skills/reviewing-a-pull-request/SKILL.md
   skills/reviewing-a-pull-request/references/finding-schema.md
   skills/reviewing-a-pull-request/references/scoring-rubric.md
-  skills/reviewing-a-pull-request/references/mapping-the-repo.md
   skills/reviewing-a-pull-request/references/brief-template.md
   skills/surveying-for-reuse/SKILL.md
   skills/reviewing-for-security/SKILL.md
@@ -436,7 +445,7 @@ cannot, so it is run by hand rather than as part of validation. It posts nothing
 
 No `hooks/` directory. Plus a `guardtower` entry in `.claude-plugin/marketplace.json`.
 
-Seven subagents per run: one mapper, four analysts, one arbitrator, one poster.
+Six subagents per run: four analysts, one arbitrator, one poster.
 
 ## Prerequisites
 

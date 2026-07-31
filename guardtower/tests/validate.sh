@@ -99,9 +99,35 @@ if [ -s "$CONDUCTOR/references/finding-schema.md" ]; then
   # with no stated cost passes a check written specifically to drop it. Anchored to the sentence
   # that pins the type AND to the JSON example's own line, because either alone leaves the other
   # free to drift back to a string.
-  grep_flat "$CONDUCTOR/references/finding-schema.md" '`tier` is the one reuse-only field that is **a JSON number, not a string**' \
+  grep_flat "$CONDUCTOR/references/finding-schema.md" '`tier` is the one field of those three that is **a JSON number, not a string**' \
     && grep_flat "$CONDUCTOR/references/finding-schema.md" '"tier": 1,'
   check $? "finding-schema.md pins tier to a JSON number"
+
+  # The lens set, anchored to its own table row. `lens` alone recurs everywhere in this file
+  # (the return-shape JSON, the `<lens>` in id and path templates), so only the row that
+  # enumerates the values catches a fourth lens being re-added or a third being dropped.
+  grep_flat "$CONDUCTOR/references/finding-schema.md" '| `lens` | yes | `reuse`, `security`, or `smell` |'
+  check $? "finding-schema.md names exactly the three lenses"
+
+  # `kind`'s four values, and the branch conditionality of the three fields that cite an existing
+  # solution. Both rows are separately deletable and each is wrong alone: a `kind` row missing
+  # `extract` leaves extract findings untypeable and outside the scoring anchor, and a
+  # `existing_solution` row still marked "reuse only" tells the arbitrator to demand a field an
+  # extract finding cannot have, which drops every one of them. Anchored to each row's own cells,
+  # not to the bare field name, which necessarily recurs in the return-shape JSON below.
+  grep_flat "$CONDUCTOR/references/finding-schema.md" '| `kind` | every reuse finding | `reimplements`, `duplicates`, `diverges`, or `extract` —' \
+    && grep_flat "$CONDUCTOR/references/finding-schema.md" '| `tier` | reuse, not `extract` |' \
+    && grep_flat "$CONDUCTOR/references/finding-schema.md" '| `existing_solution` | reuse, not `extract` |' \
+    && grep_flat "$CONDUCTOR/references/finding-schema.md" '| `existing_evidence` | reuse, not `extract` |'
+  check $? "finding-schema.md admits the extract kind and scopes the existing-solution fields off it"
+
+  # And the prose that says WHY every reuse finding carries a kind — the merge's load-bearing
+  # claim, and the one a future editor is most likely to undo by "tidying" kind back to a
+  # reuse-branch decoration. Anchored to the two sentences that state the rule and the evidence
+  # for it; the rows above would survive either being deleted.
+  grep_flat "$CONDUCTOR/references/finding-schema.md" 'so **every** finding it emits carries a `kind`, and `extract` is the value for the second half' \
+    && grep_flat "$CONDUCTOR/references/finding-schema.md" 'the same duplicated code scored differently depending on which lens happened to raise it — observed live, at composite 81 and 74 on the same six sites'
+  check $? "finding-schema.md states why every reuse finding carries a kind"
 fi
 
 # The rubric must carry the composite formula, the gate, and the migration anchor. Each is
@@ -118,6 +144,16 @@ if [ -s "$RUBRIC" ]; then
 
   grep_flat "$RUBRIC" 'Anchor — a merged duplicate is a migration'
   check $? "scoring-rubric.md carries the merged-duplicate urgency anchor"
+
+  # …and the three kinds it applies to, which is the half that actually decides scoring. The
+  # heading anchor above survives the sentence beneath it being narrowed back to two kinds, and
+  # that narrowing IS the defect this whole lens merge was made to fix: with `extract` outside the
+  # anchor, the same six duplicated sites score 81 or 74 depending only on which remedy the lens
+  # chose. Second clause anchors the keys-off-`kind` rule, which is what forbids re-deriving the
+  # anchor from the remedy; it is separately deletable and the first clause alone would not miss it.
+  grep_flat "$RUBRIC" 'A `reimplements`, `duplicates`, or `extract` finding sits at **70–89** on urgency, not 40–69.' \
+    && grep_flat "$RUBRIC" '**The anchor keys off `kind`, and every reuse finding carries one.**'
+  check $? "scoring-rubric.md applies the anchor to extract, keyed off kind"
 
   # The three checks above all target text OUTSIDE the two band tables and the tie-break: the
   # composite line, the gate line, and the merged-duplicate anchor paragraph. Deleting the Value
@@ -293,29 +329,48 @@ if [ -s "$C" ]; then
   # the suite noticed because no single task's diff contained both ends.
   #
   # The analysts', from **The pass**. Anchored as ONE contiguous span — from `worktree` through the
-  # opening of `output_path` — and asserted against the conductor AND all four analyst skills with
-  # the same string, because this is the one payload that has to agree in five places at once: the
-  # conductor renders it, and each analyst declares it under "What you receive". Five independent
+  # opening of `output_path` — and asserted against the conductor AND all three analyst skills with
+  # the same string, because this is the one payload that has to agree in four places at once: the
+  # conductor renders it, and each analyst declares it under "What you receive". Four independent
   # per-file anchors would each prove its own file says something; only a shared span proves the
-  # five say the same thing, which is the drift this suite has been bitten by before.
+  # four say the same thing, which is the drift this suite has been bitten by before.
   #
   # The span starts at `worktree` and stops inside `output_path`'s value because those are the
-  # boundaries of what is genuinely common: `lens` carries the four-way alternation in the
+  # boundaries of what is genuinely common: `lens` carries the three-way alternation in the
   # conductor and a single literal in each analyst, and `output_path` ends in `<lens>.json` versus
-  # `reuse.json`/`security.json`/`smell.json`/`abstraction.json`. Being contiguous, it catches
-  # insertion as well as deletion — a field added anywhere between `worktree` and `output_path`
-  # breaks the match in whichever document gained it.
+  # `reuse.json`/`security.json`/`smell.json`. Being contiguous, it catches insertion as well as
+  # deletion — a field added anywhere between `worktree` and `output_path` breaks the match in
+  # whichever document gained it.
   BRIEF_SPAN='"worktree": "<absolute path to the detached worktree>", "base_sha": "<PR base sha>", "head_sha": "<PR head sha>", "changed_paths": ["<repo-relative path>", ...], "output_path": "<absolute path to .guardtower/<run>/findings/'
   miss=""
   for doc in "$C" \
              "$PLUGIN/skills/surveying-for-reuse/SKILL.md" \
              "$PLUGIN/skills/reviewing-for-security/SKILL.md" \
-             "$PLUGIN/skills/detecting-code-smell/SKILL.md" \
-             "$PLUGIN/skills/simplifying-through-abstraction/SKILL.md"; do
+             "$PLUGIN/skills/detecting-code-smell/SKILL.md"; do
     [ -s "$doc" ] && grep_flat "$doc" "$BRIEF_SPAN" || miss="$miss ${doc#"$PLUGIN"/}"
   done
   [ -z "$miss" ]
-  check $? "the analyst dispatch brief agrees field-for-field across the conductor and all four analysts (mismatched:$miss)"
+  check $? "the analyst dispatch brief agrees field-for-field across the conductor and all three analysts (mismatched:$miss)"
+
+  # The dispatch set the conductor declares exhaustive. Anchored to the sentence that enumerates
+  # it, because that list is the only place a run's five dispatches are named together — and it is
+  # the surface a deleted lens leaves an orphan on. A bare `surveying-for-reuse` search would be
+  # satisfied by the `The pass` section naming the same skill for a different purpose, with this
+  # sentence and its "nothing else is dispatched" guarantee gone. Two clauses: the enumeration and
+  # the exhaustiveness claim, which are separately deletable and each incomplete alone.
+  grep_flat "$C" 'Five named skills get dispatched over the course of a run: one of `surveying-for-reuse`, `reviewing-for-security`, `detecting-code-smell` per selected lens; then `arbitrating-findings`; then, only after triage, `posting-review-comments`.' \
+    && grep_flat "$C" 'That list is exhaustive: every dispatch a run makes follows one of those named skills, and nothing else is dispatched.'
+  check $? "conductor: names the five dispatched skills and calls the list exhaustive"
+
+  # The conductor's own copy of the lens set, in the brief it renders. The BRIEF_SPAN above
+  # deliberately starts AFTER `lens` (its value differs between conductor and analyst), so nothing
+  # asserted the alternation itself — re-adding a fourth lens here, or dropping one, left the suite
+  # green. Anchored to the rendered line.
+  # grep_flat collapses runs of whitespace, so the brief's column alignment is normalised away
+  # before the match — which is what lets this anchor survive a future realignment of that JSON
+  # block without weakening what it asserts.
+  grep_flat "$C" '"lens": "reuse | security | smell",'
+  check $? "conductor: the dispatch brief offers exactly the three lenses"
 
   # The arbitrator's. `threshold` and `worktree` are the load-bearing two: without the first, the
   # gate the user agreed at preflight step 7 is silently discarded and the arbitrator falls back to
@@ -388,12 +443,24 @@ if [ -s "$BRIEF" ]; then
   check $? "brief-template.md: breaks the composite out into value and urgency"
 
   # also_at is produced by every analyst and was consumed by neither output surface: this template
-  # had no slot for it and the poster's comment body had none either, so for the abstraction lens —
-  # whose findings "usually span several files" — every location but one was silently dropped at
-  # both. Anchored to the line and to the omit-when-empty instruction that makes it renderable.
+  # had no slot for it and the poster's comment body had none either, so for an `extract` finding —
+  # which "usually spans several files" — every location but one was silently dropped at both.
+  # Anchored to the line and to the omit-when-empty instruction that makes it renderable.
   grep_flat "$BRIEF" '- **Also at:** {{ALSO_AT}}' \
     && grep_flat "$BRIEF" 'The Also at line exists only on a finding whose also_at array is non-empty'
   check $? "brief-template.md: renders also_at, omitted when empty"
+
+  # The reuse-conditional lines, whose conditions are no longer uniform: Kind is on every reuse
+  # finding, Tier and Existing solution on every reuse finding EXCEPT extract. A template that
+  # still says "the Kind, Tier, and Existing solution lines exist only on a reuse finding" renders
+  # an empty Tier and Existing solution on every extract finding, which is the drift this check
+  # exists for. Anchored to both halves of the instruction, since each is separately deletable.
+  # Each clause is confined to a single comment line: grep_flat normalises the wrap, but the
+  # `-->`/`<!--` delimiters between lines are real characters that survive the flattening, so an
+  # anchor spanning two lines of an HTML comment block can never match.
+  grep_flat "$BRIEF" 'The Kind line exists on every reuse finding, whatever its kind' \
+    && grep_flat "$BRIEF" 'reimplements, duplicates or diverges, and NOT on one whose kind is'
+  check $? "brief-template.md: scopes Kind to every reuse finding and Tier/Existing solution off extract"
 fi
 
 # The reference documents' OWN cross-references, which check_skill never sees: it is called once per
@@ -491,6 +558,82 @@ if [ -s "$R" ]; then
   # the actual worked example rather than the word appearing anywhere.
   grep_flat "$R" 'Import lodash for a three-line'
   check $? "reuse: carries the concrete tier-2 counter-example"
+
+  # --- the extract half of the lens, absorbed from the deleted abstraction analyst -------------
+  #
+  # Everything below covers content that used to live in
+  # skills/simplifying-through-abstraction/SKILL.md and had its own validator block. That skill was
+  # deleted and its content merged here, so these anchors are retargeted at $R rather than dropped:
+  # a merge that loses the absorbed document's load-bearing rules is the failure mode the whole
+  # exercise is exposed to, and an anchor that moved with the prose is the only thing that catches
+  # it.
+
+  # The fourth kind, anchored to its own definition sentence for the same reason as the three
+  # above: the bare word "extract" recurs (the branch is named in the decision tree, the precedence
+  # rule, the scoring section and the Red flags), so only this sentence proves the taxonomy entry
+  # itself survives.
+  grep_flat "$R" 'nothing already solves this, and the PR'"'"'s own shape repeats often enough to have earned an abstraction that does not exist yet'
+  check $? "reuse: names the 'extract' finding kind"
+
+  # `kind` on EVERY finding, which is the claim the scoring anchor rests on. Without it the field
+  # drifts back to a reuse-branch decoration and identical duplication scores two ways again —
+  # the exact live-run defect. Anchored to the normative sentence, not the field name, which
+  # necessarily appears in the Return format JSON regardless.
+  grep_flat "$R" 'Set `kind` to exactly one of these four values, on **every** finding this lens emits.'
+  check $? "reuse: sets kind on every finding, not just the reuse branch"
+
+  # The precedence rule that makes one lens out of two. Deleting it leaves a lens that can answer
+  # a duplication with either remedy at random — which is what two lenses did, and the reason
+  # there is now one. Two clauses: the bolded rule and the decision tree's own branch lines, which
+  # are separately deletable and each incomplete alone (the rule without the tree states an order
+  # with no procedure; the tree without the rule shows two branches with nothing saying which wins).
+  grep_flat "$R" '**Existing beats new, always.**' \
+    && grep_flat "$R" 'does something already solve this? yes → reuse finding — the remedy is to use it no → does the shape repeat enough to earn an abstraction?'
+  check $? "reuse: existing-beats-new precedence, stated as a rule and as a tree"
+
+  # The absorbed defining rule. The abstraction skill's own check anchored only the speculative
+  # sentence; the coincidence line beside it is separately deletable and is the half that carries
+  # the actual threshold, so both are asserted. The brief's original literal check here was
+  # `grep -qi 'premature\\|speculative'` — a bare case-insensitive word search that would pass on any
+  # stray use of the word with the rule itself gone.
+  grep_flat "$R" 'An abstraction proposed for a case that has not happened yet is speculative, and speculative abstraction costs more than the duplication it prevents.' \
+    && grep_flat "$R" '*Two occurrences is a coincidence; three is a pattern.*'
+  check $? "reuse: abstraction is earned, never anticipated"
+
+  # The six complexity shapes, each paired with the pattern that tames it. Anchored on all six
+  # rather than the first and last, because top-and-bottom would catch the list being deleted
+  # wholesale but not gutted down to its middle — the same failure mode the rubric band tables are
+  # anchored against, and here it matters more: each shape is independently useful and the list is
+  # the lens's entire "what to look for" surface. Each clause carries the shape AND its remedy, so
+  # a bullet stripped back to a bare symptom with no pattern to reach for is caught too.
+  grep_flat "$R" 'chain that keeps growing as new cases arrive → a table or strategy map' \
+    && grep_flat "$R" 'copied at each call site → one policy object the call sites share' \
+    && grep_flat "$R" 'implicit in the call graph → an explicit pipeline' \
+    && grep_flat "$R" 'no shared record of which transitions are legal → a state machine' \
+    && grep_flat "$R" 'rebuilt with slightly different constants at each call site → one retry policy' \
+    && grep_flat "$R" 'every switch already written over it → polymorphism or one dispatch table'
+  check $? "reuse: carries all six complexity shapes with the pattern that tames each"
+
+  # The cost rule. Without it the lens proposes indirection with only its upside stated, which is
+  # how a review acquires abstractions nobody asked for. Anchored to the normative sentence; the
+  # word "indirection" alone recurs in the same section's opening clause and in Red flags.
+  grep_flat "$R" 'Each `extract` finding'"'"'s `proposal` must state what the reader gains against what the indirection costs. A finding that only names the gain is incomplete.'
+  check $? "reuse: requires an extract finding to state its indirection cost"
+
+  # Multi-file handling, retargeted from the abstraction block. The brief's original literal check
+  # was `grep -q 'also_at'` — known-bad: that field name necessarily also appears in the Return
+  # format JSON, so it passed with the whole section deleted. Second clause anchors the
+  # `in_diff: false` expectation, which the first does not cover and which is what stops a correct
+  # multi-file finding being read as a routing failure.
+  grep_flat "$R" 'Put the clearest occurrence in `target_file`/`target_line` and every other in `also_at`.' \
+    && grep_flat "$R" 'Expect `in_diff` to be `false` often, which routes the finding to the summary comment rather than an inline one; that is correct, not a failure.'
+  check $? "reuse: uses also_at for multi-file findings, and expects in_diff false"
+
+  # The field split between the two branches. An extract finding that carries `existing_solution`
+  # is a contradiction, and one the arbitrator drops for; an extract finding the skill tells to set
+  # `tier` produces the same drop from the other direction. Anchored to the bolded instruction.
+  grep_flat "$R" '**Set none of those four on an `extract` finding**'
+  check $? "reuse: an extract finding sets no tier or existing-solution fields"
 fi
 
 # --- the security analyst ----------------------------------------------------
@@ -545,33 +688,6 @@ if [ -s "$M" ]; then
   check $? "smell: defers to the project's existing formatter/linter"
 fi
 
-# --- the abstraction analyst --------------------------------------------------
-
-check_skill simplifying-through-abstraction
-
-A="$PLUGIN/skills/simplifying-through-abstraction/SKILL.md"
-if [ -s "$A" ]; then
-  # The brief's own literal check here is `grep -q 'also_at'` — known-bad: that field name
-  # necessarily also appears in the Return format JSON schema below, regardless of whether the
-  # multi-file guidance survives, so an unanchored search would still pass with the entire
-  # "Multi-file findings" section deleted. Anchored instead to that section's own normative
-  # sentence, which appears nowhere else in the file. grep_flat because the sentence is long
-  # enough to wrap across two source lines at the file's normal prose width, and the check must
-  # hold regardless of exactly where that wrap falls.
-  grep_flat "$A" 'Put the clearest occurrence in `target_file`/`target_line` and every other in `also_at`.'
-  check $? "abstraction: uses also_at for multi-file findings"
-
-  # The brief's own literal check here is `grep -qi 'premature\|speculative'` — also known-bad,
-  # for the same class of reason as above: a bare case-insensitive word search is satisfied by
-  # any stray use of "speculative" anywhere in the file, so it is fragile by construction — it
-  # would pass unchanged if the defining-rule sentence below were reworded to drop the word while
-  # keeping the rule, and would equally pass if the word turned up in unrelated prose elsewhere
-  # while the rule itself went missing. Anchored instead to the defining-rule section's own
-  # sentence, so the check exercises the rule itself, not the presence of one word.
-  grep_flat "$A" 'An abstraction proposed for a case that has not happened yet is speculative, and speculative abstraction costs more than the duplication it prevents.'
-  check $? "abstraction: rules out speculative abstraction"
-fi
-
 # --- the arbitrator -----------------------------------------------------------
 
 check_skill arbitrating-findings
@@ -619,6 +735,26 @@ if [ -s "$B" ]; then
   grep_flat "$B" 'Also open `existing_solution` and confirm `existing_evidence` shows it genuinely covers the claim.' \
     && grep_flat "$B" 'For `tier: 2`, additionally require a non-empty `adoption_cost`; a tier 2 finding that omits it drops as well, because a dependency proposed with no stated cost is not a finding you can score.'
   check $? "arbitrator: verifies both halves of reuse evidence, including the tier-2 adoption_cost requirement"
+
+  # …and the OTHER branch of the same rule, which the two clauses above do not reach. An `extract`
+  # finding carries no `existing_solution` by construction, so an arbitrator holding only the rule
+  # above drops every one of them — a lens that emits findings nothing can ever verify. This is the
+  # single most consequential piece of drift the merge could produce, and it is invisible to every
+  # other check in this suite. Three clauses: the do-not-drop instruction, the occurrence
+  # verification that replaces it, and the indirection-cost drop condition, each separately
+  # deletable and each wrong alone.
+  grep_flat "$B" '**must not be dropped for lacking one**' \
+    && grep_flat "$B" 'Open every location in `also_at` instead and confirm the claimed shape is actually at each' \
+    && grep_flat "$B" 'Drop it as well if its `proposal` states no indirection cost'
+  check $? "arbitrator: verifies an extract finding by its occurrence list, never dropping it for having no existing_solution"
+
+  # The urgency anchor's application, which is where the live-run defect actually landed. The
+  # rubric publishes the anchor; this file is what applies it, and an arbitrator still applying it
+  # to only two of the three kinds reproduces 81-versus-74 with the rubric correct. Second clause
+  # anchors the keys-off-`kind` rule that forbids re-deriving eligibility from the remedy.
+  grep_flat "$B" 'Apply the rubric'"'"'s merged-duplicate urgency anchor to every `reimplements`, `duplicates`, or `extract` finding' \
+    && grep_flat "$B" 'The anchor keys off `kind` and nothing else — never on which remedy the finding proposes'
+  check $? "arbitrator: applies the urgency anchor to extract too, keyed off kind"
 
   # The brief's own literal check here is `grep -qi 'discarded' && grep -qi 'dropped'` —
   # known-bad, named explicitly in the STANDING RULING: both words are the outcome names used
@@ -678,8 +814,8 @@ if [ -s "$P" ]; then
   # check when the field was implemented, so this surface was deletable while green — proven by
   # mutation: removing the `Also at:` line from the Comment body format left the suite at 129 ok /
   # PASS, and removing it together with the whole omission rule did too. That is the exact gap the
-  # template check exists to close, sitting on the output surface for the abstraction lens, whose
-  # findings usually span several files while `target_file`/`target_line` names only the clearest.
+  # template check exists to close, sitting on the output surface for `extract` findings, which
+  # usually span several files while `target_file`/`target_line` names only the clearest.
   # Two clauses because either half is separately deletable and separately wrong on its own: the
   # format line without the rule renders an empty `Also at:` on every single-location finding, and
   # the rule without the format line governs a line the template no longer has.
@@ -910,9 +1046,34 @@ fi
 
 # --- the expected skill set, exactly ---------------------------------------
 
-expected="arbitrating-findings detecting-code-smell posting-review-comments reviewing-a-pull-request reviewing-for-security simplifying-through-abstraction surveying-for-reuse"
+expected="arbitrating-findings detecting-code-smell posting-review-comments reviewing-a-pull-request reviewing-for-security surveying-for-reuse"
 actual=$(ls "$PLUGIN/skills" | sort | tr '\n' ' ' | sed 's/ $//')
-[ "$actual" = "$expected" ]; check $? "skill set is exactly the seven planned skills"
+[ "$actual" = "$expected" ]; check $? "skill set is exactly the six planned skills"
+
+# --- no orphaned reference to the deleted abstraction analyst -----------------
+#
+# The skill-set check above catches the directory coming back. It says nothing about the far more
+# likely residue: a document still naming a skill that no longer exists — the conductor's dispatch
+# list, the poster's lens vocabulary, the README's flow diagram. check_links cannot see these,
+# because the plugin's prose names skills bare (`simplifying-through-abstraction`) rather than by
+# path, and a bare name matches none of its two target shapes. A dangling name is worse than a
+# broken link here: it tells a model at dispatch time to invoke a skill that will not resolve.
+#
+# The needle is assembled from two halves rather than written whole, because this file lives under
+# $PLUGIN and a literal would match itself the moment tests/ is ever included in the sweep. The
+# sweep is scoped to the documents a run actually reads: skills, commands, and the README.
+orphan_needle="simplifying-through""-abstraction"
+orphans=$(grep -rl "$orphan_needle" "$PLUGIN/skills" "$PLUGIN/commands" "$PLUGIN/README.md" 2>/dev/null | tr '\n' ' ')
+[ -z "$orphans" ]; check $? "no plugin document names the deleted abstraction skill (found:$orphans)"
+
+# The same sweep for the retired lens VALUE. `abstraction` as an English word is legitimate and
+# expected — the reuse lens's extract half is built on it — so a bare word search would fail
+# against a correct tree. What must not survive is the lens NAME in a machine-read position: a
+# `"lens": "abstraction"` field, an `abstraction.json` findings path, or the value inside a lens
+# alternation. Those three shapes are searched; prose is left alone.
+lens_orphans=$(grep -rlE '"lens": *"abstraction"|abstraction\.json|smell \| abstraction' \
+  "$PLUGIN/skills" "$PLUGIN/commands" "$PLUGIN/README.md" 2>/dev/null | tr '\n' ' ')
+[ -z "$lens_orphans" ]; check $? "no plugin document still uses abstraction as a lens value (found:$lens_orphans)"
 
 # --- the finished plugin is frozen, as signal and verity are ----------------
 #

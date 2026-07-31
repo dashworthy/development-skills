@@ -1,5 +1,5 @@
 ---
-description: Review a GitHub pull request or GitLab merge request — four analysts, an arbitrator, and comments posted only after you approve them
+description: Review a GitHub pull request or GitLab merge request — three analysts, an arbitrator, and comments posted only after you approve them
 ---
 
 Review the pull request or merge request identified by `$ARGUMENTS`.

@@ -7,10 +7,14 @@
 ## What it is
 
 A Claude Code plugin providing one command: **`/guardtower:review <url|number>`**. It reviews a
-GitHub pull request or GitLab merge request by dispatching four analysts — reuse, security, code
-smell, abstraction — whose findings are verified and scored by an arbitrator against a published
-rubric. Anything below 80 is discarded. What survives is presented for in-scope / out-of-scope
-triage, and the in-scope items are posted back to the PR as review comments.
+GitHub pull request or GitLab merge request by dispatching three analysts — reuse, security, code
+smell — whose findings are verified and scored by an arbitrator against a published rubric.
+Anything below 80 is discarded. What survives is presented for in-scope / out-of-scope triage, and
+the in-scope items are posted back to the PR as review comments.
+
+The reuse lens owns duplication whole: both the half where something already solves the problem
+and the half where a repeated shape has earned an abstraction that does not exist yet. It was two
+lenses until the first live run — see **The reuse lens** below.
 
 It is explicitly invoked. There is no hook, no injected message, and no local-diff mode.
 
@@ -47,14 +51,12 @@ flowchart TD
 
     subgraph PASS ["The pass — one iteration, never repeated"]
         BRIEF["Dispatch brief: base sha, head sha,<br/>worktree path, changed paths"]
-        BRIEF --> L1["surveying-for-reuse"]
+        BRIEF --> L1["surveying-for-reuse<br/>reuse AND extract:<br/>one lens owns duplication"]
         BRIEF --> L2["reviewing-for-security"]
         BRIEF --> L3["detecting-code-smell"]
-        BRIEF --> L4["simplifying-through-abstraction"]
         L1 --> STAGE
         L2 --> STAGE
         L3 --> STAGE
-        L4 --> STAGE
         STAGE[("<b>.guardtower/&lt;run&gt;/findings/</b><br/>one JSON per lens.<br/>Analysts return ONLY a receipt —<br/>the conductor never sees a finding")]
         STAGE --> ARB["Arbitrator is handed the full payload —<br/>finding paths, worktree, base and head sha,<br/>threshold, lenses run — and reads the files itself"]
         ARB --> VER{"Does the cited evidence<br/>still hold at the head sha?"}
@@ -105,10 +107,9 @@ worktree is discarded; and reconciliation therefore only has to watch the **main
 | Skill | Role | Runs in |
 |---|---|---|
 | `reviewing-a-pull-request` | conductor | main context |
-| `surveying-for-reuse` | analyst | subagent |
+| `surveying-for-reuse` | analyst — reuse *and* extract | subagent |
 | `reviewing-for-security` | analyst | subagent |
 | `detecting-code-smell` | analyst | subagent |
-| `simplifying-through-abstraction` | analyst | subagent |
 | `arbitrating-findings` | verifier and ranker | subagent |
 | `posting-review-comments` | forge poster | subagent |
 
@@ -117,13 +118,26 @@ worktree is discarded; and reconciliation therefore only has to watch the **main
 testable in one place.
 
 The skills table above is the whole dispatch set: every subagent a run dispatches runs one of the
-six entries marked *subagent*. Nothing is dispatched against a reference document instead of a
+five entries marked *subagent*. Nothing is dispatched against a reference document instead of a
 skill.
 
-The four analysts are separate skills rather than one lens-parameterised skill because their
+The three analysts are separate skills rather than one lens-parameterised skill because their
 domain guidance genuinely differs (a vulnerability taxonomy has nothing in common with a
 duplication search strategy). What they share — the return shape, the evidence requirement, the
 read-only rule — lives once in `references/finding-schema.md`.
+
+**Why there is no fourth.** There was one — `simplifying-through-abstraction`, an abstraction lens
+— and the first live run against a real merge request deleted it. That run produced `reuse-002` at
+composite 81, passed, and `abstraction-001` at composite 74, discarded, **on the same six code
+sites**: one defect, two lenses, opposite verdicts. The immediate cause was the scoring rubric's
+merged-duplicate urgency anchor keying off `kind`, a field then documented as reuse-only, so which
+lens happened to raise a duplication finding decided whether it got the anchor. The underlying
+cause is that duplication is **one observation with two remedies** — reuse says "call the thing
+that already exists", abstraction says "extract a new thing" — and choosing between them requires
+the same evidence, so splitting the decision across two agents that cannot see each other
+guarantees they sometimes disagree. The two are therefore one lens, with existing-beats-new
+precedence, and the criteria distinguishing separate skills above still hold for the three that
+remain.
 
 ## The run
 
@@ -144,7 +158,7 @@ the code and measures nothing, so a second iteration would re-derive identical f
 6. **Snapshot the main tree** — `git diff --numstat HEAD` and `git status --porcelain` — before
    dispatching the **first** subagent of the run, whichever subagent that is, so that no dispatch
    this run makes falls outside the check.
-7. **Agree the gate.** Offer the default threshold of 80 and all four lenses; let the user
+7. **Agree the gate.** Offer the default threshold of 80 and all three lenses; let the user
    override either. Persist neither. A lens the user drops is not dispatched and is named in the
    final report, so a short brief is never mistaken for a clean one.
 
@@ -249,7 +263,7 @@ dropped, not scored low.
 | Field | Required | Meaning |
 |---|---|---|
 | `id` | yes | `<lens>-<nnn>` — `security-003`, `reuse-011`. Assigned by the arbitrator on merge |
-| `lens` | yes | `reuse`, `security`, `smell`, or `abstraction` |
+| `lens` | yes | `reuse`, `security`, or `smell` |
 | `target_file` | yes | Repo-relative path |
 | `target_line` | yes | Line or range the evidence sits at, at the head sha |
 | `evidence` | yes | The actual source text at that location — what the arbitrator re-reads to confirm |
@@ -258,10 +272,10 @@ dropped, not scored low.
 | `proposal` | yes | What to do instead. Prose, never a patch — guardtower does not modify code |
 | `in_diff` | yes | Whether `target_line` falls inside a diff hunk. Decides inline vs summary |
 | `also_at` | no | Further `file:line` locations for a finding spanning several files |
-| `kind` | reuse only | `reimplements`, `duplicates`, or `diverges` — see the reuse lens below |
-| `tier` | reuse only | A JSON number, never a string: `1` already reachable, `2` not yet installed |
-| `existing_solution` | reuse only | The thing that already does this: a repo path, a package plus the exact export, or a stdlib/platform API |
-| `existing_evidence` | reuse only | Source text or documented signature proving it covers the claim |
+| `kind` | every reuse finding | `reimplements`, `duplicates`, `diverges`, or `extract` — see the reuse lens below |
+| `tier` | reuse, not `extract` | A JSON number, never a string: `1` already reachable, `2` not yet installed |
+| `existing_solution` | reuse, not `extract` | The thing that already does this: a repo path, a package plus the exact export, or a stdlib/platform API |
+| `existing_evidence` | reuse, not `extract` | Source text or documented signature proving it covers the claim |
 | `adoption_cost` | tier 2 only | What adding this dependency costs: supply-chain surface, maintenance, version churn |
 | `value` | yes | 0–100, assigned by the arbitrator |
 | `urgency` | yes | 0–100, assigned by the arbitrator |
@@ -272,8 +286,27 @@ arbitrator's.
 
 ## The reuse lens — challenge the decision to build
 
-The other three lenses review code that exists. This one challenges whether it should exist at
-all, and it is deliberately the most aggressive of the four.
+The other two lenses review code that exists. This one challenges whether it should exist at
+all, and it is deliberately the most aggressive of the three.
+
+**One observation, two remedies.** This lens owns duplication whole. Duplication is a single
+observation, and which remedy applies is decided by one question the lens already has to answer:
+
+```
+candidate found in the diff
+   ↓
+does something already solve this?
+   yes → reuse finding — the remedy is to use it
+   no  → does the shape repeat enough to earn an abstraction?
+          yes → extract finding — the remedy is to build one
+          no  → not a finding
+```
+
+**Existing beats new, always.** Where something already solves the problem, the finding cites that
+thing; proposing a freshly extracted abstraction instead would be building a second solution to a
+solved problem, which is the defect this lens exists to catch. The extract branch opens only on a
+searched null answer to the mandatory question below, and then only under the bar in **Abstraction
+is earned** further down.
 
 **The mandatory question.** For every new file, module, class, exported function, or utility the
 PR introduces, the analyst must answer in writing: *what already does this?* A null answer is
@@ -296,20 +329,58 @@ utility with "add a dependency" — trading a small maintenance cost for a perma
 burning the credibility of every other finding it makes. *Do not hand-roll JWT parsing when `jose`
 exists* is a legitimate tier 2 finding. *Import lodash for a three-line `groupBy`* is not.
 
-**Three kinds of finding**, strongest first:
+**Four kinds of finding.** The first three are the reuse branch, strongest first; the fourth is the
+extract branch:
 
 - **`reimplements`** — the PR builds a capability that already exists whole. The strongest claim
   the lens can make.
 - **`duplicates`** — specific logic repeated from an existing local implementation.
 - **`diverges`** — solves a problem the repo already has an established mechanism for, in a
   different way, leaving two patterns where there was one.
+- **`extract`** — nothing already solves this, and the PR's own shape repeats often enough to have
+  earned an abstraction that does not exist yet. Reachable only on a searched null answer.
 
-**Evidence has two halves here.** The generic `evidence` field cites the new code. A reuse finding
-must *additionally* cite what it claims already exists — `existing_solution` and
-`existing_evidence` — and the arbitrator verifies both halves. A finding whose superseding
-solution cannot be confirmed to actually cover the requirement is dropped exactly like any other
-unverified claim. This closes the lens's characteristic failure: a confident "library X already
-does this" where library X does something adjacent.
+`kind` is set on **every** finding this lens emits — it is the lens's whole taxonomy, not a
+decoration on the findings that cite an existing solution. That is load-bearing for scoring: the
+merged-duplicate urgency anchor keys off `kind`, and while duplication was split across two lenses
+and only one of them set the field, identical duplication scored differently depending on which
+lens raised it.
+
+**Evidence has two halves here.** The generic `evidence` field cites the new code. A
+`reimplements`, `duplicates`, or `diverges` finding must *additionally* cite what it claims already
+exists — `existing_solution` and `existing_evidence` — and the arbitrator verifies both halves. A
+finding whose superseding solution cannot be confirmed to actually cover the requirement is dropped
+exactly like any other unverified claim. This closes the lens's characteristic failure: a confident
+"library X already does this" where library X does something adjacent.
+
+An `extract` finding has no second half of that kind — its precondition is that nothing already
+does this — so it sets no `tier`, `existing_solution`, or `existing_evidence`, and the arbitrator
+must not drop it for their absence. Its second half is the occurrence list in `also_at`, verified
+the same way: occurrences that do not hold come out of the count, and a finding left with fewer
+than three drops.
+
+**Abstraction is earned, never anticipated.** The defining rule of the extract branch, and the
+easiest thing this lens does to get wrong in the expensive direction: proposing structure the code
+does not yet need. Propose an abstraction only where the repetition or branching it would collapse
+**already exists in the code**, and say how many occurrences and where. *Two occurrences is a
+coincidence; three is a pattern.* An abstraction proposed for a case that has not happened yet is
+speculative, and speculative abstraction costs more than the duplication it prevents.
+
+**What earns an extract finding**, each shape paired with the pattern that tames it: sprawling
+hard-coded branching → a table or strategy map; a duplicated conditional ladder appearing in
+several places → one policy object; ad-hoc sequencing and orchestration → an explicit pipeline;
+scattered state transitions with no single place to read the machine → a state machine; repeated
+try/retry/backoff ladders → one retry policy; parallel `switch` statements over the same enum in
+different files → polymorphism or one dispatch table.
+
+**Say what it costs.** Every abstraction adds indirection, and indirection has a reader cost. Each
+`extract` finding's `proposal` must state what the reader gains against what the indirection costs;
+a finding that only names the gain is incomplete, and the arbitrator drops it for the same reason
+it drops a tier 2 finding with no `adoption_cost`.
+
+**Multi-file findings.** An `extract` finding usually spans several files: clearest occurrence in
+`target_file`/`target_line`, every other in `also_at`. Expect `in_diff` to be `false` often, which
+routes the finding to the summary comment rather than an inline one — correct, not a failure.
 
 **Rationalizations, and what they're worth.** The analyst holds the line against these; they are
 arguments for triage, not reasons to withhold a finding.
@@ -347,13 +418,19 @@ and arbitrator work to it.
 | 40–69 | Same cost later as now |
 | 0–39 | Cheaper later, or may become moot |
 
-**Anchor — a merged duplicate is a migration.** A `reimplements` or `duplicates` finding sits at
-**70–89** on urgency, not 40–69. Once a duplicate capability merges, callers begin depending on it
-immediately, and removing it stops being an edit and becomes a migration. This anchor is stated
-explicitly because the alternative reading is the intuitive one and it quietly kills the lens:
-value 85 with urgency 60 composites to 75 and is discarded, so an aggressive reuse challenge that
-finds real duplication would produce nothing that ever clears the gate. With the correct reading,
-85 and 80 composite to 83 and pass.
+**Anchor — a merged duplicate is a migration.** A `reimplements`, `duplicates`, or `extract`
+finding sits at **70–89** on urgency, not 40–69. Once duplication merges, callers begin depending
+on it immediately, and removing it stops being an edit and becomes a migration. This anchor is
+stated explicitly because the alternative reading is the intuitive one and it quietly kills the
+lens: value 85 with urgency 60 composites to 75 and is discarded, so an aggressive reuse challenge
+that finds real duplication would produce nothing that ever clears the gate. With the correct
+reading, 85 and 80 composite to 83 and pass.
+
+The anchor keys off `kind`, and every reuse finding carries one. All three values it names are the
+same observation, differing only in remedy; scoring the remedy rather than the observation is what
+produced composite 81 and 74 on the same six sites during the first live run. `diverges` stays
+outside the anchor: two competing patterns is a real finding, but nothing is depending on a second
+copy of the same capability.
 
 **Composite:** `round(0.6 × value + 0.4 × urgency)`. Default gate: **80**.
 
@@ -402,7 +479,6 @@ run is deleted by removing one path.
       reuse.json          analyst staging; read by the arbitrator, never across runs
       security.json
       smell.json
-      abstraction.json
     brief.md              what cleared the gate
     approved.md           marked in scope, and posted
     deferred.md           marked out of scope — write-only backlog
@@ -430,7 +506,6 @@ guardtower/
   skills/surveying-for-reuse/SKILL.md
   skills/reviewing-for-security/SKILL.md
   skills/detecting-code-smell/SKILL.md
-  skills/simplifying-through-abstraction/SKILL.md
   skills/arbitrating-findings/SKILL.md
   skills/posting-review-comments/SKILL.md
   tests/validate.sh
@@ -445,7 +520,7 @@ cannot, so it is run by hand rather than as part of validation. It posts nothing
 
 No `hooks/` directory. Plus a `guardtower` entry in `.claude-plugin/marketplace.json`.
 
-Six subagents per run: four analysts, one arbitrator, one poster.
+Five subagents per run: three analysts, one arbitrator, one poster.
 
 ## Prerequisites
 

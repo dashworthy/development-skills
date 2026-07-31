@@ -28,7 +28,7 @@
     },
     {
       "name": "guardtower",
-      "description": "PR-scoped advisory review: four analysts audit a pull request, an arbitrator scores their findings, and the ones you approve are posted back as review comments.",
+      "description": "PR-scoped advisory review: three analysts audit a pull request, an arbitrator scores their findings, and the ones you approve are posted back as review comments.",
       "version": "0.1.0",
       "source": "./guardtower",
       "author": {

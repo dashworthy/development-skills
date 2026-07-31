@@ -50,7 +50,7 @@ anywhere else.
 ## A smell is a predicted failure, not a preference
 
 This is the rule the rest of the lens exists to enforce, and it is the reason this lens has the
-weakest signal-to-noise ratio of the four if it goes unenforced: without a hard rule, "code smell"
+weakest signal-to-noise ratio of the three if it goes unenforced: without a hard rule, "code smell"
 degenerates into a list of things the reviewer would have written differently, and the real
 findings get buried under it.
 

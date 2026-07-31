@@ -7,7 +7,7 @@ This is the contract every analyst writes and the arbitrator reads.
 | Field | Required | Meaning |
 |---|---|---|
 | `id` | yes | `<lens>-<nnn>` — `security-003`, `reuse-011`. Assigned by the arbitrator on merge |
-| `lens` | yes | `reuse`, `security`, `smell`, or `abstraction` |
+| `lens` | yes | `reuse`, `security`, or `smell` |
 | `target_file` | yes | Repo-relative path |
 | `target_line` | yes | Line or range the evidence sits at, at the head sha |
 | `evidence` | yes | The actual source text at that location — what the arbitrator re-reads to confirm |
@@ -16,10 +16,10 @@ This is the contract every analyst writes and the arbitrator reads.
 | `proposal` | yes | What to do instead. Prose, never a patch — guardtower does not modify code |
 | `in_diff` | yes | Whether `target_line` falls inside a diff hunk. Decides inline vs summary |
 | `also_at` | no | Further `file:line` locations for a finding spanning several files |
-| `kind` | reuse only | `reimplements`, `duplicates`, or `diverges` — defined in `../../surveying-for-reuse/SKILL.md` |
-| `tier` | reuse only | A JSON number, never a string: `1` already reachable, `2` not yet installed |
-| `existing_solution` | reuse only | The thing that already does this: a repo path, a package plus the exact export, or a stdlib/platform API |
-| `existing_evidence` | reuse only | Source text or documented signature proving it covers the claim |
+| `kind` | every reuse finding | `reimplements`, `duplicates`, `diverges`, or `extract` — defined in `../../surveying-for-reuse/SKILL.md` |
+| `tier` | reuse, not `extract` | A JSON number, never a string: `1` already reachable, `2` not yet installed |
+| `existing_solution` | reuse, not `extract` | The thing that already does this: a repo path, a package plus the exact export, or a stdlib/platform API |
+| `existing_evidence` | reuse, not `extract` | Source text or documented signature proving it covers the claim |
 | `adoption_cost` | tier 2 only | What adding this dependency costs: supply-chain surface, maintenance, version churn |
 | `value` | yes | 0–100, assigned by the arbitrator |
 | `urgency` | yes | 0–100, assigned by the arbitrator |
@@ -36,7 +36,7 @@ Write exactly this shape to your `findings/<lens>.json`:
 {
   "findings": [
     {
-      "lens": "reuse | security | smell | abstraction",
+      "lens": "reuse | security | smell",
       "target_file": "<repo-relative path>",
       "target_line": "<line or start-end range, at the head sha>",
       "evidence": "<the actual source text at that location>",
@@ -46,17 +46,35 @@ Write exactly this shape to your `findings/<lens>.json`:
       "in_diff": true,
       "also_at": ["<file:line>"],
 
-      "kind": "<reuse lens only: reimplements | duplicates | diverges>",
+      "kind": "<reuse lens: reimplements | duplicates | diverges | extract>",
       "tier": 1,
-      "existing_solution": "<reuse lens only>",
-      "existing_evidence": "<reuse lens only>",
+      "existing_solution": "<reuse lens, not on an extract finding>",
+      "existing_evidence": "<reuse lens, not on an extract finding>",
       "adoption_cost": "<reuse lens, tier 2 only>"
     }
   ]
 }
 ```
 
-`tier` is the one reuse-only field that is **a JSON number, not a string** — write `1` or `2`,
+## `kind` is the reuse lens's whole taxonomy
+
+The reuse lens owns duplication whole — both the half where something already exists and the half
+where a repeated shape has earned an abstraction that does not — so **every** finding it emits
+carries a `kind`, and `extract` is the value for the second half. It is not a decoration on the
+findings that cite an existing solution.
+
+That matters beyond vocabulary, because `scoring-rubric.md`'s merged-duplicate urgency anchor keys
+off this field. While duplication was split across two lenses and only one of them set `kind`, the
+same duplicated code scored differently depending on which lens happened to raise it — observed
+live, at composite 81 and 74 on the same six sites. One lens, one taxonomy, one anchor closes
+that.
+
+The three fields that cite an existing solution — `tier`, `existing_solution`, `existing_evidence`
+— are set on `reimplements`, `duplicates`, and `diverges` findings and **not** on an `extract`
+finding, whose precondition is that no existing solution was found. An `extract` finding's second
+half of evidence is its occurrence list in `also_at`.
+
+`tier` is the one field of those three that is **a JSON number, not a string** — write `1` or `2`,
 never `"1"` or `"2"`. It is pinned because the arbitrator's tier-2 rule is a hard drop condition:
 a finding whose `tier` arrives as the string `"2"` and is compared against the number `2` fails
 that comparison, the adoption-cost requirement is never applied, and a tier 2 finding with no

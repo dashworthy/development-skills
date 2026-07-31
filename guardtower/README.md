@@ -1,10 +1,16 @@
 # guardtower
 
 guardtower is a Claude Code plugin for PR-scoped advisory review. One command —
-`/guardtower:review <url|number>` — reviews a GitHub pull request or GitLab merge request: four
-analysts (reuse, security, code smell, abstraction) find issues, an arbitrator verifies their
-evidence and scores it against an 80-point gate, and only the findings you mark in scope are
-posted back to the PR as review comments.
+`/guardtower:review <url|number>` — reviews a GitHub pull request or GitLab merge request: three
+analysts (reuse, security, code smell) find issues, an arbitrator verifies their evidence and
+scores it against an 80-point gate, and only the findings you mark in scope are posted back to the
+PR as review comments.
+
+The reuse lens owns duplication whole — both what already exists and what merely repeats. That is
+one lens rather than two on purpose: duplication is a single observation with two remedies, and
+choosing between "call the thing that already exists" and "extract a new one" needs the same
+evidence, so splitting it across two analysts that cannot see each other only guarantees they
+sometimes disagree about the same six lines.
 
 ## The two rules
 
@@ -32,14 +38,12 @@ flowchart TD
 
     subgraph PASS ["The pass — one iteration, never repeated"]
         BRIEF["Dispatch brief: base sha, head sha,<br/>worktree path, changed paths"]
-        BRIEF --> L1["surveying-for-reuse"]
+        BRIEF --> L1["surveying-for-reuse<br/>reuse AND extract:<br/>one lens owns duplication"]
         BRIEF --> L2["reviewing-for-security"]
         BRIEF --> L3["detecting-code-smell"]
-        BRIEF --> L4["simplifying-through-abstraction"]
         L1 --> STAGE
         L2 --> STAGE
         L3 --> STAGE
-        L4 --> STAGE
         STAGE[("<b>.guardtower/&lt;run&gt;/findings/</b><br/>one JSON per lens.<br/>Analysts return ONLY a receipt —<br/>the conductor never sees a finding")]
         STAGE --> ARB["Arbitrator is handed the full payload —<br/>finding paths, worktree, base and head sha,<br/>threshold, lenses run — and reads the files itself"]
         ARB --> VER{"Does the cited evidence<br/>still hold at the head sha?"}
@@ -87,7 +91,7 @@ silently weakens a run.
 
 Invoke `/guardtower:review 482` or `/guardtower:review <url>` — a bare PR/MR number, or the full
 URL your forge gives you. Guardtower asks for the review threshold (default 80) and which of the
-four lenses to run, fresh, every time; nothing about a run is written to disk for the next one to
+three lenses to run, fresh, every time; nothing about a run is written to disk for the next one to
 read.
 
 It requires a PR or MR reference and has no local-diff mode. Reviewing uncommitted work is not
@@ -98,7 +102,7 @@ what this tool does.
 Stated plainly, because an undocumented gap reads as an oversight and a documented one reads as a
 decision.
 
-**There is no enforcement hook.** Nothing mechanically stops a dispatched agent — one of the four
+**There is no enforcement hook.** Nothing mechanically stops a dispatched agent — one of the three
 analysts, or the arbitrator — from writing outside `.guardtower/`. The worktree absorbs most of
 that risk, since anything written there is discarded with it at the end of the run. What remains
 is a write into your **main** tree, and nothing prevents the write itself.

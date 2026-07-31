@@ -1,6 +1,6 @@
 ---
 name: reviewing-a-pull-request
-description: Use when reviewing a GitHub pull request or GitLab merge request with guardtower - dispatches reuse, security, code smell and abstraction analysts against the PR in an isolated worktree, scores their findings through an arbitrator, and posts the ones the user approves. Never modifies the repository under review.
+description: Use when reviewing a GitHub pull request or GitLab merge request with guardtower - dispatches reuse, security and code smell analysts against the PR in an isolated worktree, scores their findings through an arbitrator, and posts the ones the user approves. Never modifies the repository under review.
 ---
 
 # Reviewing a Pull Request
@@ -39,11 +39,10 @@ scores and rationale; the dropped list, with each item's one-line reason its evi
 and the discarded entries, verified but scored below the threshold. Everything the conductor
 reports, and everything it renders into `brief.md`, comes from that one return value.
 
-Six named skills get dispatched over the course of a run: one of `surveying-for-reuse`,
-`reviewing-for-security`, `detecting-code-smell`, `simplifying-through-abstraction` per selected
-lens; then `arbitrating-findings`; then, only after triage, `posting-review-comments`. That list is
-exhaustive: every dispatch a run makes follows one of those named skills, and nothing else is
-dispatched.
+Five named skills get dispatched over the course of a run: one of `surveying-for-reuse`,
+`reviewing-for-security`, `detecting-code-smell` per selected lens; then `arbitrating-findings`;
+then, only after triage, `posting-review-comments`. That list is exhaustive: every dispatch a run
+makes follows one of those named skills, and nothing else is dispatched.
 
 ## Preflight
 
@@ -91,7 +90,7 @@ it. And reconciliation therefore only has to watch the **main** tree — see **R
 6. **Snapshot the main tree** — `git diff --numstat HEAD` and `git status --porcelain` — before
    dispatching the **first** subagent of the run, whichever subagent that is, so that no dispatch
    this run makes falls outside the check. See **Reconcile**.
-7. **Agree the gate.** Offer the default threshold of 80 and all four lenses; let the user
+7. **Agree the gate.** Offer the default threshold of 80 and all three lenses; let the user
    override either. Persist neither. A lens the user drops is not dispatched, and is named in the
    final report, so a short brief is never mistaken for a clean one.
 
@@ -117,12 +116,11 @@ a directory scan to "make ids cleaner."
 
 One analyst per selected lens, dispatched **in parallel**, per
 `superpowers:dispatching-parallel-agents` — `surveying-for-reuse` (reuse), `reviewing-for-security`
-(security), `detecting-code-smell` (smell), `simplifying-through-abstraction` (abstraction). Each
-receives exactly this dispatch brief:
+(security), `detecting-code-smell` (smell). Each receives exactly this dispatch brief:
 
 ```json
 {
-  "lens":          "reuse | security | smell | abstraction",
+  "lens":          "reuse | security | smell",
   "worktree":      "<absolute path to the detached worktree>",
   "base_sha":      "<PR base sha>",
   "head_sha":      "<PR head sha>",

@@ -56,7 +56,7 @@ control, and what they get.
 
 **A finding you cannot write an exploitation path for is not a finding.**
 
-Security review has the highest false-positive rate of the four lenses. A wrong finding that
+Security review has the highest false-positive rate of the three lenses. A wrong finding that
 clears the gate costs the user a review, and it costs every later finding in this run its
 credibility — a user who catches one invented vulnerability starts reading the rest of the report
 as noise, including the real findings in it. Hold the rule above harder here than in any other

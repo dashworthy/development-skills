@@ -25,7 +25,7 @@ One dispatch per run:
   "base_sha": "<PR base sha>",
   "head_sha": "<PR head sha>",
   "threshold": 80,
-  "lenses_run": ["reuse", "security", "smell", "abstraction"]
+  "lenses_run": ["reuse", "security", "smell"]
 }
 ```
 
@@ -48,15 +48,27 @@ a string literal rather than the thing it's accused of being, **drop the finding
 one line.** Do not score it low; dropping and low-scoring are different outcomes and the report
 distinguishes them.
 
-## Reuse findings have two halves
+## Reuse findings have two halves, and `kind` says which
 
-A `reuse` finding's `evidence` proves the new code exists; it says nothing about whether
-`existing_solution` genuinely covers the claim. Also open `existing_solution` and confirm
-`existing_evidence` shows it genuinely covers the claim. A superseding solution that turns out to
-do something merely adjacent — not the same thing, just nearby — fails verification exactly like
-stale evidence: the finding drops. For `tier: 2`, additionally require a non-empty `adoption_cost`;
-a tier 2 finding that omits it drops as well, because a dependency proposed with no stated cost is
-not a finding you can score.
+A `reuse` finding's `evidence` proves the new code exists; it says nothing about the second half of
+the claim. Which second half that is, is decided by `kind` — read it first, and verify the half it
+names.
+
+**`reimplements`, `duplicates`, `diverges` — the second half is the existing solution.** Also open
+`existing_solution` and confirm `existing_evidence` shows it genuinely covers the claim. A
+superseding solution that turns out to do something merely adjacent — not the same thing, just
+nearby — fails verification exactly like stale evidence: the finding drops. For `tier: 2`,
+additionally require a non-empty `adoption_cost`; a tier 2 finding that omits it drops as well,
+because a dependency proposed with no stated cost is not a finding you can score.
+
+**`extract` — the second half is the occurrence list.** This kind asserts that nothing already
+solves the problem and that the shape repeats often enough to earn an abstraction, so it carries no
+`existing_solution` and **must not be dropped for lacking one**. Open every location in `also_at`
+instead and confirm the claimed shape is actually at each; occurrences that do not hold come out of
+the count, and a finding left with fewer than three verified occurrences drops, because two
+occurrences is a coincidence and the lens's own bar says so. Drop it as well if its `proposal`
+states no indirection cost — an abstraction proposed with only its gain named is the extract
+branch's version of a tier 2 finding with no `adoption_cost`, and it drops for the same reason.
 
 ## Score against the published rubric
 
@@ -68,10 +80,12 @@ the same document instead of each arbitrator's private judgment.
 
 Score `value` and `urgency` against the rubric's tables for every finding that survived
 verification, then compute `composite` as `round(0.6 × value + 0.4 × urgency)`, never a number you
-estimate yourself. Apply the rubric's merged-duplicate urgency anchor to every `reimplements` or
-`duplicates` finding: urgency lands at 70–89, not the lower band the same evidence would suggest for
-anything else, because a duplicate capability that merges starts acquiring callers immediately, and
-removing it later is a migration, not an edit.
+estimate yourself. Apply the rubric's merged-duplicate urgency anchor to every `reimplements`,
+`duplicates`, or `extract` finding: urgency lands at 70–89, not the lower band the same evidence
+would suggest for anything else, because duplication that merges starts acquiring callers and
+copies immediately, and removing it later is a migration, not an edit. The anchor keys off `kind`
+and nothing else — never on which remedy the finding proposes, which is what let identical
+duplication score two different ways before the reuse lens owned both halves of it.
 
 ## Assign ids
 
@@ -112,7 +126,7 @@ Return exactly this shape — never write it to a file, this is your return valu
   "passed": [
     {
       "id": "<lens>-<nnn>",
-      "lens": "reuse | security | smell | abstraction",
+      "lens": "reuse | security | smell",
       "target_file": "<repo-relative path>",
       "target_line": "<line or start-end range, at the head sha>",
       "claim": "<what is wrong, as an observable consequence>",
@@ -120,9 +134,9 @@ Return exactly this shape — never write it to a file, this is your return valu
       "proposal": "<what to do instead — prose, never a patch>",
       "in_diff": true,
       "also_at": ["<file:line>"],
-      "kind": "<reuse lens only: reimplements | duplicates | diverges>",
+      "kind": "<reuse lens: reimplements | duplicates | diverges | extract>",
       "tier": 1,
-      "existing_solution": "<reuse lens only>",
+      "existing_solution": "<reuse lens, not on an extract finding>",
       "adoption_cost": "<reuse lens, tier 2 only>",
       "value": 92,
       "urgency": 95,
@@ -162,7 +176,10 @@ these three lists and nothing else.
   of reading it directly with the Read tool. Guardtower deliberately has no tool whose absence
   would silently weaken a run; shelling out reintroduces exactly that dependency.
 - Scoring a finding without opening the file it cites.
-- Scoring a reuse finding without opening its `existing_solution`.
+- Scoring a `reimplements`, `duplicates`, or `diverges` finding without opening its
+  `existing_solution`.
+- Dropping an `extract` finding for having no `existing_solution`, or scoring one without opening
+  the locations in its `also_at`.
 - Inventing scoring criteria instead of applying `scoring-rubric.md` as written.
 - Conflating dropped with discarded.
 - Writing any file — you return your result, you do not write it anywhere.

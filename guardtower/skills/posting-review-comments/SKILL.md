@@ -32,7 +32,7 @@ One dispatch per run:
   "base_sha": "<PR base sha>",
   "head_sha": "<PR head sha>",
   "run_id": "<YYYY-MM-DD>-<pr-number>-<suffix>",
-  "lenses_run": ["reuse", "security", "smell", "abstraction"],
+  "lenses_run": ["reuse", "security", "smell"],
   "lenses_skipped": ["<lens>", "..."],
   "approved": [ "<the in-scope subset of the arbitrator's `passed` array>" ]
 }
@@ -48,8 +48,9 @@ say which lenses were skipped (see **Summary comment structure**) without being 
 Each entry in `approved` carries exactly the fields the arbitrator assigns in its `passed` array —
 never more, never invented here. See `../arbitrating-findings/SKILL.md`'s Return format for the
 authoritative field list: `id`, `lens`, `target_file`, `target_line`, `claim`, `rationale`,
-`proposal`, `in_diff`, `also_at`, `value`, `urgency`, `composite`, and, for reuse findings, `kind`,
-`tier`, `existing_solution`, and, at tier 2, `adoption_cost`. If a field this skill wants isn't on
+`proposal`, `in_diff`, `also_at`, `value`, `urgency`, `composite`, plus `kind` on every reuse
+finding, `tier` and `existing_solution` on every reuse finding except an `extract` one, and
+`adoption_cost` at tier 2. If a field this skill wants isn't on
 that list, it doesn't exist yet — that is a conductor or arbitrator change, not something to
 paper over here.
 
@@ -131,14 +132,15 @@ value <value> · urgency <urgency>
 ```
 
 The `Also at` line appears only when `also_at` is non-empty — omit the line entirely when the
-finding sits at a single location. Do not omit it when it *is* populated: an abstraction finding
+finding sits at a single location. Do not omit it when it *is* populated: an `extract` finding
 usually spans several files, and `target_file`/`target_line` names only the clearest of them, so a
 comment that drops `also_at` silently reports one occurrence of a problem the analyst found in
 five.
 
-The `Existing solution` line appears only for reuse findings; the `Adoption cost` line appears
-only for reuse findings at tier 2. Omit both for every other finding, and omit `Adoption cost`
-alone for a tier 1 reuse finding. The `value <n> · urgency <n>` footer is never omitted — it is
+The `Existing solution` line appears only for reuse findings that cite one — `reimplements`,
+`duplicates`, and `diverges`, never `extract`, which by definition found nothing that already
+solves the problem. The `Adoption cost` line appears only for reuse findings at tier 2. Omit both
+for every other finding, and omit `Adoption cost` alone for a tier 1 reuse finding. The `value <n> · urgency <n>` footer is never omitted — it is
 what lets a reader see how the finding scored without opening `brief.md`.
 
 ## Summary comment structure

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the `guardtower` Claude Code plugin — one command, `/guardtower:review <url|number>`, that reviews a GitHub PR or GitLab MR through four analyst subagents, scores their findings via an arbitrator, and posts the ones you approve back to the forge.
+**Goal:** Build the `guardtower` Claude Code plugin — one command, `/guardtower:review <url|number>`, that reviews a GitHub PR or GitLab MR through three analyst subagents, scores their findings via an arbitrator, and posts the ones you approve back to the forge.
 
-**Architecture:** A plugin is a directory of markdown documents plus one JSON manifest. There is no runtime code to compile: the deliverables are a command file, seven skill documents, four reference documents, and a manifest. Correctness is therefore *structural* (does it parse, load, and resolve its own cross-references?) and *behavioural* (does an installed instance actually stop where the spec says it stops?). Both are tested by `guardtower/tests/validate.sh`, which every task extends and re-runs.
+**Architecture:** A plugin is a directory of markdown documents plus one JSON manifest. There is no runtime code to compile: the deliverables are a command file, six skill documents, four reference documents, and a manifest. Correctness is therefore *structural* (does it parse, load, and resolve its own cross-references?) and *behavioural* (does an installed instance actually stop where the spec says it stops?). Both are tested by `guardtower/tests/validate.sh`, which every task extends and re-runs.
 
 **Tech Stack:** Markdown with YAML frontmatter; POSIX `sh` and `python3` (stdlib only) for the validator; `gh` / `glab` at runtime. No build step, no package manager, no new dependencies.
 
@@ -22,7 +22,7 @@ Every task's requirements implicitly include these. They come from the spec; the
 - **Run id format:** `<YYYY-MM-DD>-<pr-number>-<suffix>`, `suffix` from `LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 6` (minimum six characters, lowercase alphanumeric).
 - **Artifact root:** `.guardtower/<run>/` containing `findings/<lens>.json`, `brief.md`, `approved.md`, `deferred.md`.
 - **Composite score:** `round(0.6 × value + 0.4 × urgency)`. Default gate: `80`.
-- **Lens names** are exactly `reuse`, `security`, `smell`, `abstraction`.
+- **Lens names** are exactly `reuse`, `security`, `smell`. (`abstraction` was a fourth until Task 12 merged it into `reuse`.)
 - **`gh` or `glab` is required**; `jq` is NOT required and no skill may shell out to it.
 - **Guardtower never modifies the repository under review and never switches the checked-out branch.** All reading of PR content happens inside a detached `git worktree` in a temp directory, removed on every exit path.
 - **The conductor reads the arbitrator's brief and nothing else** — never a diff body, never an analyst's finding.
@@ -38,19 +38,18 @@ Every task's requirements implicitly include these. They come from the spec; the
 | `guardtower/README.md` | What it is, how to run it, what it does not guarantee |
 | `guardtower/commands/review.md` | Thin entry point; parses the PR ref, invokes the conductor |
 | `guardtower/skills/reviewing-a-pull-request/SKILL.md` | Conductor: preflight, worktree, dispatch, reconcile, triage |
-| `guardtower/skills/reviewing-a-pull-request/references/finding-schema.md` | Finding fields + return shape, shared by all four analysts |
+| `guardtower/skills/reviewing-a-pull-request/references/finding-schema.md` | Finding fields + return shape, shared by all three analysts |
 | `guardtower/skills/reviewing-a-pull-request/references/scoring-rubric.md` | Value/urgency anchors, composite, tie-break |
 | `guardtower/skills/reviewing-a-pull-request/references/brief-template.md` | Rendering template for `brief.md` |
-| `guardtower/skills/surveying-for-reuse/SKILL.md` | Reuse analyst — the aggressive build-vs-reuse challenge |
+| `guardtower/skills/surveying-for-reuse/SKILL.md` | Reuse analyst — the aggressive build-vs-reuse challenge, and (from Task 12) the extract half of duplication |
 | `guardtower/skills/reviewing-for-security/SKILL.md` | Security analyst |
 | `guardtower/skills/detecting-code-smell/SKILL.md` | Code smell analyst |
-| `guardtower/skills/simplifying-through-abstraction/SKILL.md` | Abstraction analyst |
 | `guardtower/skills/arbitrating-findings/SKILL.md` | Verifies evidence, scores, ranks, gates |
 | `guardtower/skills/posting-review-comments/SKILL.md` | Forge posting via `gh` / `glab` |
 | `guardtower/tests/validate.sh` | Structural + behavioural validator, extended by every task |
 | `.claude-plugin/marketplace.json` | **Modify** — add the `guardtower` entry |
 
-Splitting rationale: the four analysts are separate documents because their domain guidance shares nothing but shape, and a reviewer can reject one lens's criteria while accepting another's. Everything they *do* share — return shape, evidence rules, read-only rule — lives once in `finding-schema.md` so it cannot drift four ways.
+Splitting rationale: the three analysts are separate documents because their domain guidance shares nothing but shape, and a reviewer can reject one lens's criteria while accepting another's. Everything they *do* share — return shape, evidence rules, read-only rule — lives once in `finding-schema.md` so it cannot drift three ways. There were four until Task 12: reuse and abstraction shared not just shape but the *evidence* each needed, which is exactly the case the rationale above does not cover, so they were merged.
 
 ---
 
@@ -141,7 +140,7 @@ Create `guardtower/.claude-plugin/plugin.json`:
 ```json
 {
   "name": "guardtower",
-  "description": "PR-scoped advisory review: four analysts (reuse, security, code smell, abstraction) audit a pull request, an arbitrator verifies their evidence and scores it, and the findings you approve are posted back as review comments. Never modifies the code under review.",
+  "description": "PR-scoped advisory review: three analysts (reuse, security, code smell) audit a pull request, an arbitrator verifies their evidence and scores it, and the findings you approve are posted back as review comments. Never modifies the code under review.",
   "version": "0.1.0",
   "author": { "name": "Andrew Leach", "email": "7387639+andyleach@users.noreply.github.com" },
   "license": "MIT",
@@ -151,7 +150,7 @@ Create `guardtower/.claude-plugin/plugin.json`:
 
 Create `guardtower/README.md` with these sections (prose written to match verity's README voice — direct, states limits as decisions rather than omissions):
 
-1. **Title + one-paragraph summary.** One command, reviews a PR/MR, four analysts, an arbitrator, an 80 gate, comments posted only after you approve them.
+1. **Title + one-paragraph summary.** One command, reviews a PR/MR, three analysts, an arbitrator, an 80 gate, comments posted only after you approve them.
 2. **The two rules**, copied verbatim from spec §The two rules.
 3. **How a run flows** — copy the mermaid diagram verbatim from spec §How a run flows.
 4. **Installation** — marketplace add / plugin install, mirroring verity's README wording. State that `gh` or `glab` must be installed and authenticated, and that `jq` is *not* required.
@@ -164,7 +163,7 @@ Add to `.claude-plugin/marketplace.json`, in the `plugins` array after the `veri
 ```json
     {
       "name": "guardtower",
-      "description": "PR-scoped advisory review: four analysts audit a pull request, an arbitrator scores their findings, and the ones you approve are posted back as review comments.",
+      "description": "PR-scoped advisory review: three analysts audit a pull request, an arbitrator scores their findings, and the ones you approve are posted back as review comments.",
       "version": "0.1.0",
       "source": "./guardtower",
       "author": {
@@ -211,7 +210,7 @@ git commit -m "feat(guardtower): plugin skeleton and validation harness"
 
 ## Task 2: Shared references — finding schema and scoring rubric
 
-Every analyst and the arbitrator depend on these two documents. They come first so the four analysts cannot each invent their own return shape.
+Every analyst and the arbitrator depend on these two documents. They come first so the three analysts cannot each invent their own return shape.
 
 **Files:**
 - Create: `guardtower/skills/reviewing-a-pull-request/references/finding-schema.md`
@@ -226,7 +225,7 @@ Every analyst and the arbitrator depend on these two documents. They come first 
 {
   "findings": [
     {
-      "lens": "reuse | security | smell | abstraction",
+      "lens": "reuse | security | smell",
       "target_file": "<repo-relative path>",
       "target_line": "<line or start-end range, at the head sha>",
       "evidence": "<the actual source text at that location>",
@@ -236,10 +235,10 @@ Every analyst and the arbitrator depend on these two documents. They come first 
       "in_diff": true,
       "also_at": ["<file:line>"],
 
-      "kind": "<reuse lens only: reimplements | duplicates | diverges>",
+      "kind": "<reuse lens: reimplements | duplicates | diverges | extract>",
       "tier": 1,
-      "existing_solution": "<reuse lens only>",
-      "existing_evidence": "<reuse lens only>",
+      "existing_solution": "<reuse lens, not on an extract finding>",
+      "existing_evidence": "<reuse lens, not on an extract finding>",
       "adoption_cost": "<reuse lens, tier 2 only>"
     }
   ]
@@ -345,7 +344,7 @@ git commit -m "feat(guardtower): finding schema and scoring rubric"
 
 ```
 {
-  "lens":          "reuse | security | smell | abstraction",
+  "lens":          "reuse | security | smell",
   "worktree":      "<absolute path to the detached worktree>",
   "base_sha":      "<PR base sha>",
   "head_sha":      "<PR head sha>",
@@ -426,7 +425,7 @@ Create `SKILL.md` with this exact frontmatter:
 ```markdown
 ---
 name: reviewing-a-pull-request
-description: Use when reviewing a GitHub pull request or GitLab merge request with guardtower - dispatches reuse, security, code smell and abstraction analysts against the PR in an isolated worktree, scores their findings through an arbitrator, and posts the ones the user approves. Never modifies the repository under review.
+description: Use when reviewing a GitHub pull request or GitLab merge request with guardtower - dispatches reuse, security and code smell analysts against the PR in an isolated worktree, scores their findings through an arbitrator, and posts the ones the user approves. Never modifies the repository under review.
 ---
 ```
 
@@ -451,7 +450,7 @@ Body sections, in order:
 11. **Reporting, always** — what was posted, what was dropped by evidence failure with reasons, what was discarded by the gate, and every lens the user chose not to run. Then invoke `superpowers:verification-before-completion`.
 12. **Red flags — STOP** — at minimum: reading a diff or a finding in the conductor's own context; switching the user's branch; running `gh pr checkout`; posting anything not marked in scope; auto-reverting a reconciliation violation; leaving the worktree behind; writing a config file "to make this more reliable next time"; reporting a threshold met without the numbers that prove it.
 
-Create `brief-template.md` — a `{{PLACEHOLDER}}` template mirroring `verity/skills/conducting-test-hardening/references/brief-template.md` in style. It must render: run id, PR reference, base and head sha, lenses run and lenses skipped, threshold; a summary count table (passed / dropped on evidence / discarded by gate); then one block per passed finding showing `{{ID}}`, lens, `{{COMPOSITE}}` with `{{VALUE}}`/`{{URGENCY}}` broken out, `{{TARGET_FILE}}:{{TARGET_LINE}}`, `in_diff`, `{{ALSO_AT}}`, claim, rationale, proposal, and — for reuse findings — `{{KIND}}`, `{{TIER}}`, `{{EXISTING_SOLUTION}}`, and `{{ADOPTION_COST}}`. Include HTML-comment instructions to omit reuse-only lines for non-reuse findings, as verity's template does, and to omit the Also at line for a finding whose `also_at` array is empty — an abstraction finding usually spans several files and `{{TARGET_FILE}}` names only the clearest, so a template with no `{{ALSO_AT}}` slot reports one occurrence of a problem found in five.
+Create `brief-template.md` — a `{{PLACEHOLDER}}` template mirroring `verity/skills/conducting-test-hardening/references/brief-template.md` in style. It must render: run id, PR reference, base and head sha, lenses run and lenses skipped, threshold; a summary count table (passed / dropped on evidence / discarded by gate); then one block per passed finding showing `{{ID}}`, lens, `{{COMPOSITE}}` with `{{VALUE}}`/`{{URGENCY}}` broken out, `{{TARGET_FILE}}:{{TARGET_LINE}}`, `in_diff`, `{{ALSO_AT}}`, claim, rationale, proposal, and — for reuse findings — `{{KIND}}`, `{{TIER}}`, `{{EXISTING_SOLUTION}}`, and `{{ADOPTION_COST}}`. Include HTML-comment instructions to omit reuse-only lines for non-reuse findings, as verity's template does, and to omit the Also at line for a finding whose `also_at` array is empty — an `extract` finding usually spans several files and `{{TARGET_FILE}}` names only the clearest, so a template with no `{{ALSO_AT}}` slot reports one occurrence of a problem found in five.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -469,7 +468,7 @@ git commit -m "feat(guardtower): conductor skill and brief template"
 
 ## Task 4: The reuse analyst
 
-The most specified of the four. Build it first so the remaining three can follow its shape.
+The most specified of the four analysts this plan originally called for. Build it first so the rest can follow its shape. Task 12 later merges the abstraction lens into it, leaving three.
 
 **Files:**
 - Create: `guardtower/skills/surveying-for-reuse/SKILL.md`
@@ -477,7 +476,7 @@ The most specified of the four. Build it first so the remaining three can follow
 
 **Interfaces:**
 - Consumes: the dispatch brief from Task 3; the finding contract from Task 2.
-- Produces: `findings/reuse.json` in the shape from Task 2, with `kind`, `tier`, `existing_solution`, `existing_evidence` always set and `adoption_cost` set whenever `tier` is `2`. Returns only `wrote <N> findings to <output_path>`.
+- Produces: `findings/reuse.json` in the shape from Task 2, with `kind` always set and — on a `reimplements`, `duplicates` or `diverges` finding — `tier`, `existing_solution`, `existing_evidence` alongside it, plus `adoption_cost` whenever `tier` is `2`. An `extract` finding sets `kind` and none of those four *(amended by Task 12; before it, this lens had three kinds and always set all four)*. Returns only `wrote <N> findings to <output_path>`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -522,11 +521,11 @@ Body, in order:
 2. **What you receive** — the dispatch brief fields from Task 3, and the reminder that every path resolves inside `worktree`, never the user's checked-out tree.
 3. **The mandatory question** — copied in substance from spec §The reuse lens: for every new file, module, class, exported function or utility the PR introduces, answer in writing *what already does this?* A null answer is acceptable **only** with the search that produced it — paths scanned, manifest entries checked, stdlib/platform APIs considered. **Silence is not a null answer.** State that this is a standing burden, not an occasional finding.
 4. **Two tiers** — the tier table copied verbatim from spec §The reuse lens, followed by the asymmetry paragraph including both worked examples verbatim: *do not hand-roll JWT parsing when `jose` exists* is legitimate tier 2; *import lodash for a three-line `groupBy`* is not.
-5. **Three kinds of finding** — `reimplements`, `duplicates`, `diverges`, defined verbatim from spec §The reuse lens, strongest first.
-6. **Evidence has two halves** — `evidence` cites the new code; `existing_solution` + `existing_evidence` cite what supersedes it. State the failure this closes: a confident "library X already does this" where X does something merely adjacent. State that the arbitrator verifies both halves and drops the finding if the second fails.
+5. **Four kinds of finding** *(amended by Task 12 — three at first)* — `reimplements`, `duplicates`, `diverges` defined verbatim from spec §The reuse lens, strongest first, then `extract` for the branch where nothing already solves the problem. `kind` is set on every finding this lens emits; it is the lens's whole taxonomy and the field the scoring anchor keys off.
+6. **Evidence has two halves** — `evidence` cites the new code; `existing_solution` + `existing_evidence` cite what supersedes it. State the failure this closes: a confident "library X already does this" where X does something merely adjacent. State that the arbitrator verifies both halves and drops the finding if the second fails. *(Amended by Task 12: an `extract` finding's second half is its occurrence list in `also_at` instead, since by construction nothing already exists to cite.)*
 7. **Rationalizations, and what they're worth** — the six-row excuse table copied verbatim from spec §The reuse lens. Add the framing sentence: these are arguments for triage, made by a human after the finding exists, never reasons to withhold it.
 8. **Scoring input** — you do not score. Read `../reviewing-a-pull-request/references/scoring-rubric.md` so your `rationale` gives the arbitrator what it needs, in particular the merged-duplicate urgency anchor.
-9. **Return format** — the JSON from Task 2's Interfaces, with the reuse-only fields required. State the receipt rule: return `wrote <N> findings to <output_path>` and nothing else.
+9. **Return format** — the JSON from Task 2's Interfaces, with the reuse-lens fields required per the Interfaces block above. State the receipt rule: return `wrote <N> findings to <output_path>` and nothing else.
 10. **Red flags — STOP** — writing any file other than `output_path`; proposing a dependency that is not well-established; a tier 2 finding with no `adoption_cost`; a finding whose `existing_solution` you have not opened and read; answering the mandatory question with silence; emitting `id`, `value`, `urgency` or `composite`; returning findings in your reply instead of a receipt.
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -589,7 +588,7 @@ Body, in order:
 
 1. **You are read-only** — same framing as Task 4, stated first.
 2. **What you receive** — the dispatch brief fields.
-3. **What counts as a finding here** — a defect with a **stated exploitation path**: who the attacker is, what they control, what they get. State the rule directly: *a finding you cannot write an exploitation path for is not a finding.* Security review has the highest false-positive rate of the four lenses, and a wrong one that clears the gate costs the user a review and costs every later finding its credibility.
+3. **What counts as a finding here** — a defect with a **stated exploitation path**: who the attacker is, what they control, what they get. State the rule directly: *a finding you cannot write an exploitation path for is not a finding.* Security review has the highest false-positive rate of the lenses, and a wrong one that clears the gate costs the user a review and costs every later finding its credibility.
 4. **A taxonomy to work through**, each with what to look for in a diff: injection (SQL, command, template, path traversal); authentication and session handling; authorization and object-level access; secrets and credentials in code, logs, or error messages; cryptography (weak primitives, non-constant-time comparison, predictable randomness — including `Math.random()` and unseeded PRNGs where a CSPRNG is required); deserialization and parsing of untrusted input; SSRF and outbound request construction; unsafe defaults in newly added configuration; dependency changes that widen attack surface.
 5. **Theoretical findings are out of scope** — say plainly that "this could be dangerous if reached from untrusted input" is not a finding unless you can name the path by which untrusted input reaches it. If you cannot trace it, do not emit it.
 6. **Severity feeds scoring, it is not scoring** — you set `rationale` so the arbitrator can score; you never set `value`, `urgency`, or `composite`. Read `../reviewing-a-pull-request/references/scoring-rubric.md`.
@@ -678,72 +677,27 @@ git commit -m "feat(guardtower): code smell analyst"
 
 ---
 
-## Task 7: The abstraction analyst
+## Task 7: The abstraction analyst — SUPERSEDED by Task 12
 
-**Files:**
-- Create: `guardtower/skills/simplifying-through-abstraction/SKILL.md`
-- Modify: `guardtower/tests/validate.sh`
+**This task built a skill that no longer exists.** It created
+`guardtower/skills/simplifying-through-abstraction/SKILL.md`, the fourth analyst, and Task 12
+deleted it and absorbed its content into `surveying-for-reuse`. The record is kept rather than
+rewritten because Task 12's reasoning only makes sense against what was actually built, and because
+a plan that quietly erases a task it reversed teaches the next reader nothing.
 
-**Interfaces:**
-- Consumes: the dispatch brief from Task 3; the finding contract from Task 2.
-- Produces: `findings/abstraction.json`; returns a receipt only. Sets no reuse-only fields. Uses `also_at` heavily, since findings here typically span several files.
+What this task produced, and where each piece now lives:
 
-- [ ] **Step 1: Write the failing test**
+| Task 7 content | Now in |
+|---|---|
+| `simplifying-through-abstraction/SKILL.md`, lens `abstraction` | Deleted. Its lens value is gone from the schema |
+| **Abstraction is earned, never anticipated**, with *two occurrences is a coincidence; three is a pattern* | `surveying-for-reuse/SKILL.md` §Abstraction is earned, never anticipated |
+| The six complexity shapes, each paired with the pattern that tames it | `surveying-for-reuse/SKILL.md` §What earns an extract finding |
+| **Say what it costs** — every abstraction adds indirection | `surveying-for-reuse/SKILL.md` §Say what it costs |
+| **Multi-file findings** — `also_at`, `in_diff: false` expected | `surveying-for-reuse/SKILL.md` §Multi-file findings |
+| **Scope is the diff** | `surveying-for-reuse/SKILL.md` §Scope is the diff |
+| Its validator checks | Retargeted at `$R` in the reuse block of `tests/validate.sh` |
 
-Append to `guardtower/tests/validate.sh`, before the final `printf` block:
-
-```sh
-check_skill simplifying-through-abstraction
-
-A="$PLUGIN/skills/simplifying-through-abstraction/SKILL.md"
-if [ -s "$A" ]; then
-  grep -q 'also_at' "$A"
-  check $? "abstraction: uses also_at for multi-file findings"
-  grep -qi 'premature\|speculative' "$A"
-  check $? "abstraction: rules out speculative abstraction"
-fi
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-
-Run: `sh guardtower/tests/validate.sh`
-Expected: FAIL on `skill simplifying-through-abstraction: SKILL.md exists` and both abstraction-specific checks; exit status `1`.
-
-- [ ] **Step 3: Write minimal implementation**
-
-Create `SKILL.md` with this exact frontmatter:
-
-```markdown
----
-name: simplifying-through-abstraction
-description: Use when dispatched by guardtower to audit a pull request for structural complexity a higher-level pattern would tame - reports only abstractions justified by repetition that already exists, and modifies nothing
----
-```
-
-Body, in order:
-
-1. **You are read-only** — same framing as Task 4, stated first.
-2. **What you receive** — the dispatch brief fields.
-3. **Abstraction is earned, never anticipated** — the defining rule. Propose an abstraction only where the repetition or branching it would collapse **already exists in the code**, and say how many occurrences and where. *Two occurrences is a coincidence; three is a pattern.* An abstraction proposed for a case that has not happened yet is speculative, and speculative abstraction costs more than the duplication it prevents.
-4. **What to look for**, each with the pattern that tames it: sprawling hard-coded branching → a table or strategy map; a duplicated conditional ladder appearing in several places → one policy object; ad-hoc sequencing and orchestration → an explicit pipeline; scattered state transitions with no single place to read the machine → a state machine; repeated try/retry/backoff ladders → one retry policy; parallel `switch` statements over the same enum in different files → polymorphism or one dispatch table.
-5. **Say what it costs** — every abstraction adds indirection, and indirection has a reader cost. Each finding's `proposal` must state what the reader gains against what the indirection costs. A finding that only names the gain is incomplete.
-6. **Multi-file findings** — these usually span several files. Put the clearest occurrence in `target_file`/`target_line` and every other in `also_at`. Expect `in_diff` to be `false` often, which routes the finding to the summary comment rather than an inline one; that is correct, not a failure.
-7. **Scope is the diff** — the repetition must be introduced or extended by this PR. Pre-existing repetition the diff did not touch is not this PR's finding.
-8. **Scoring input** — read `../reviewing-a-pull-request/references/scoring-rubric.md`.
-9. **Return format** — the JSON from Task 2; receipt only.
-10. **Red flags — STOP** — proposing an abstraction for repetition that does not yet exist; proposing one without stating its indirection cost; counting two occurrences as a pattern; reporting pre-existing repetition the diff did not touch; writing any file other than `output_path`; returning findings instead of a receipt.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `sh guardtower/tests/validate.sh`
-Expected: PASS — all checks `ok`, exit status `0`.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add guardtower/skills/simplifying-through-abstraction guardtower/tests/validate.sh
-git commit -m "feat(guardtower): abstraction analyst"
-```
+Do not rebuild this skill. Task 12 states why.
 
 ---
 
@@ -928,7 +882,7 @@ Body, in order:
    ```
 
 4. **Routing** — `in_diff: true` becomes an inline comment at `target_file`:`target_line`; `in_diff: false` becomes a line in the one summary comment. Explain the constraint rather than treating it as a bug: GitHub and GitLab only accept an inline comment on a line present in the diff, so a finding whose evidence sits in untouched code — common for reuse findings, where the duplicated original is not part of the change — cannot be anchored inline. Relocating it to the summary is correct; relocating it *silently* is not, so the return names which findings were moved and why.
-5. **Comment body format** — `**guardtower <id>** (<composite>) — <claim>`, then the rationale, then the proposal, then an `Also at: <also_at, comma-joined>` line, then a `value <n> · urgency <n>` footer so a reader can see how it scored. For reuse findings add a line naming `existing_solution`, and for tier 2 a line naming `adoption_cost`. The Also at line appears only when `also_at` is non-empty — omit it entirely for a single-location finding, and never omit it when it is populated, since an abstraction finding usually spans several files and `target_file`/`target_line` names only the clearest of them.
+5. **Comment body format** — `**guardtower <id>** (<composite>) — <claim>`, then the rationale, then the proposal, then an `Also at: <also_at, comma-joined>` line, then a `value <n> · urgency <n>` footer so a reader can see how it scored. For reuse findings add a line naming `existing_solution`, and for tier 2 a line naming `adoption_cost`. The Also at line appears only when `also_at` is non-empty — omit it entirely for a single-location finding, and never omit it when it is populated, since an `extract` finding usually spans several files and `target_file`/`target_line` names only the clearest of them.
 6. **Summary comment structure** — a `## guardtower` heading, the run id, the lenses run and any lenses skipped, then findings grouped by lens with their file:line. Where a lens was skipped, say so — a short comment must never read as a clean bill of health.
 7. **Failure handling** — if the API call fails, report the failure with the response body and stop. Do not retry with a reduced payload, and do not fall back to posting a plain comment when an inline one was intended; both quietly change what the user approved.
 8. **Return format** — `{ posted_inline, posted_summary, review_url }`.
@@ -981,9 +935,9 @@ fi
 
 # --- the expected skill set, exactly ---------------------------------------
 
-expected="arbitrating-findings detecting-code-smell posting-review-comments reviewing-a-pull-request reviewing-for-security simplifying-through-abstraction surveying-for-reuse"
+expected="arbitrating-findings detecting-code-smell posting-review-comments reviewing-a-pull-request reviewing-for-security surveying-for-reuse"
 actual=$(ls "$PLUGIN/skills" | sort | tr '\n' ' ' | sed 's/ $//')
-[ "$actual" = "$expected" ]; check $? "skill set is exactly the seven planned skills"
+[ "$actual" = "$expected" ]; check $? "skill set is exactly the six planned skills"
 ```
 
 Then create `guardtower/tests/e2e.sh` — the behavioural test, kept separate because it installs the plugin and runs a real session:
@@ -1048,7 +1002,7 @@ Create `guardtower/commands/review.md`:
 
 ```markdown
 ---
-description: Review a GitHub pull request or GitLab merge request — four analysts, an arbitrator, and comments posted only after you approve them
+description: Review a GitHub pull request or GitLab merge request — three analysts, an arbitrator, and comments posted only after you approve them
 ---
 
 Review the pull request or merge request identified by `$ARGUMENTS`.
@@ -1154,6 +1108,88 @@ git commit -m "chore(guardtower): freeze the plugin directory and ignore run art
 
 ---
 
+## Task 12: Merge the abstraction lens into reuse
+
+Added after the first live run. Four analysts became three.
+
+**Files:**
+- Modify: `guardtower/skills/surveying-for-reuse/SKILL.md`
+- Delete: `guardtower/skills/simplifying-through-abstraction/SKILL.md`
+- Modify: `guardtower/skills/reviewing-a-pull-request/SKILL.md`
+- Modify: `guardtower/skills/reviewing-a-pull-request/references/finding-schema.md`
+- Modify: `guardtower/skills/reviewing-a-pull-request/references/scoring-rubric.md`
+- Modify: `guardtower/skills/reviewing-a-pull-request/references/brief-template.md`
+- Modify: `guardtower/skills/arbitrating-findings/SKILL.md`
+- Modify: `guardtower/skills/posting-review-comments/SKILL.md`
+- Modify: `guardtower/skills/reviewing-for-security/SKILL.md`, `guardtower/skills/detecting-code-smell/SKILL.md` (lens count only)
+- Modify: `guardtower/README.md`, `guardtower/commands/review.md`, `guardtower/.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`
+- Modify: `guardtower/tests/validate.sh`
+
+**Why.** The first live run against a real merge request produced `reuse-002` at composite 81
+(passed) and `abstraction-001` at composite 74 (discarded) **on the same six code sites**. One
+defect, two lenses, opposite verdicts. The immediate cause was mechanical: the scoring rubric's
+merged-duplicate urgency anchor keys off `kind`, and `kind` was documented as reuse-only, so which
+lens happened to raise a duplication finding decided whether it got the anchor. The deeper cause is
+that **duplication is one observation with two remedies** — reuse says "call the thing that already
+exists", abstraction says "extract a new thing" — and choosing between them requires the same
+evidence, namely whether something already exists. Splitting that decision across two agents that
+cannot see each other guarantees they sometimes disagree.
+
+**The design.** One lens, with existing-beats-new precedence:
+
+```
+candidate found in the diff
+   ↓
+does something already solve this?
+   yes → reuse finding — the remedy is to use it
+   no  → does the shape repeat enough to earn an abstraction?
+          yes → extract finding — the remedy is to build one
+          no  → not a finding
+```
+
+**Decisions, to minimise churn across ten files:**
+
+- **Keep the lens id `reuse` and the skill directory `surveying-for-reuse`.** These are
+  identifiers; renaming them churns the schema, the artifact filenames, the validator anchors, this
+  plan and the spec for no behavioural gain.
+- **The skill's `description` frontmatter and body must state both halves plainly.** The
+  description is what a dispatcher reads; a document whose name undersells its scope is how drift
+  starts.
+- **`kind` gains a fourth value, `extract`.** It stops being reuse-branch decoration and becomes the
+  lens's whole finding taxonomy: every finding the lens emits carries one, so identical defects
+  cannot score differently by accident of which lens raised them.
+- **`tier`, `existing_solution`, `existing_evidence` are not set on an `extract` finding** — its
+  precondition is that no existing solution was found. Its second half of evidence is the
+  occurrence list in `also_at`.
+- **The urgency anchor covers `extract` too.** It keys off the observation (duplication that gets
+  more expensive to remove after merge), never the remedy; anchoring on the remedy is what produced
+  81-versus-74 in the first place. `diverges` stays outside it.
+- **`simplifying-through-abstraction` is deleted**, its content absorbed. See Task 7's table for
+  where each piece landed.
+
+**Validator changes.** The exact skill-set check drops to six; the dispatch-brief span is asserted
+across the conductor and three analysts; the abstraction block's two checks are retargeted at `$R`;
+and new anchors cover the precedence rule, the four kinds, the six complexity shapes, the earned-
+abstraction rule, the indirection-cost rule, the `extract` schema rows, the widened anchor, the
+arbitrator's kind-conditional verification, and an orphan check that no plugin document still names
+the deleted skill.
+
+- [ ] **Step 1: Write the failing tests** — update the skill-set check to six, retarget the
+  abstraction anchors at `$R`, and add the new anchors above.
+- [ ] **Step 2: Run test to verify it fails** — `sh guardtower/tests/validate.sh`, exit `1`.
+- [ ] **Step 3: Write the implementation** — as above.
+- [ ] **Step 4: Run test to verify it passes** — `sh guardtower/tests/validate.sh`.
+- [ ] **Step 5: Prove every new check by surgical mutation** — delete the target, confirm FAIL,
+  restore from a byte snapshot, confirm byte-identical, confirm PASS.
+- [ ] **Step 6: Commit**
+
+```bash
+git add guardtower docs/superpowers .claude-plugin/marketplace.json
+git commit -m "refactor(guardtower)!: merge the abstraction lens into reuse"
+```
+
+---
+
 ## Self-Review
 
 **1. Spec coverage.**
@@ -1168,8 +1204,8 @@ git commit -m "chore(guardtower): freeze the plugin directory and ignore run art
 | The pass; context firewall | 3 (dispatch + receipt), 8 (arbitrator reads the files) |
 | Reconciliation | 3 |
 | Findings (field table) | 2 |
-| The reuse lens | 4 |
-| Scoring (rubric, anchor, tie-break) | 2, applied in 8 |
+| The reuse lens (both halves of duplication) | 4, merged with the abstraction lens in 12 |
+| Scoring (rubric, anchor, tie-break) | 2, applied in 8, anchor widened in 12 |
 | Triage and posting | 3 (triage), 9 (posting) |
 | Disk layout | 3 |
 | Repository layout | 1–10 |
@@ -1183,7 +1219,7 @@ No gaps.
 
 **2. Placeholder scan.** No `TBD`, no "similar to Task N", no "add appropriate error handling". Every skill task enumerates its required sections and names the spec section to copy verbatim where the spec is the authority. Every shell and JSON block is complete and runnable as written.
 
-**3. Type consistency.** Checked across tasks: lens names are `reuse`/`security`/`smell`/`abstraction` everywhere (Global Constraints, Task 2 schema, Task 3 dispatch brief, Task 10 skill-set check); the finding field list in Task 2's JSON matches the validator's field loop in Task 2 Step 1 and the spec's table exactly; `output_path` is the name used in the dispatch brief (Task 3) and in all four analysts' return rules (Tasks 4–7) and their red-flag lists; `passed`/`dropped`/`discarded` are used identically in Task 8's return shape, its body section 8, and its validator check; `in_diff` is set by analysts (Task 2), consumed by the poster (Task 9), and checked in both; `composite`/`value`/`urgency` are arbitrator-owned in Tasks 2, 4–8.
+**3. Type consistency.** Checked across tasks: lens names are `reuse`/`security`/`smell` everywhere after Task 12 (Global Constraints, Task 2 schema, Task 3 dispatch brief, Task 10 skill-set check); the finding field list in Task 2's JSON matches the validator's field loop in Task 2 Step 1 and the spec's table exactly; `output_path` is the name used in the dispatch brief (Task 3) and in every analyst's return rules (Tasks 4–6) and their red-flag lists; `passed`/`dropped`/`discarded` are used identically in Task 8's return shape, its body section 8, and its validator check; `in_diff` is set by analysts (Task 2), consumed by the poster (Task 9), and checked in both; `composite`/`value`/`urgency` are arbitrator-owned in Tasks 2, 4–8.
 
 **4. The plan's own test code.** The validator is built by appending across ten tasks, so it was checked as one concatenated script rather than block by block. Three defects found and fixed inline:
 

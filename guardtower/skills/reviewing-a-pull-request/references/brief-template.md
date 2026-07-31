@@ -41,11 +41,13 @@
 
 <!-- The Also at line exists only on a finding whose also_at array is non-empty — omit the line -->
 <!-- when the finding sits at a single location, and render every other location when it does -->
-<!-- not, comma-joined. An abstraction finding usually spans several files and TARGET_FILE names -->
+<!-- not, comma-joined. An extract finding usually spans several files and TARGET_FILE names -->
 <!-- only the clearest of them, so dropping ALSO_AT reports one occurrence of a problem found in -->
 <!-- five. -->
 
-<!-- The Kind, Tier, and Existing solution lines exist only on a reuse finding — omit all three -->
-<!-- for every finding from another lens. Adoption cost exists only on a reuse finding whose tier -->
-<!-- is 2 — omit it for reuse findings at tier 1, and for every non-reuse finding regardless of -->
-<!-- tier. -->
+<!-- The Kind line exists on every reuse finding, whatever its kind — omit it only for a finding -->
+<!-- from another lens. Tier and Existing solution exist on a reuse finding whose kind is -->
+<!-- reimplements, duplicates or diverges, and NOT on one whose kind is extract, which cites no -->
+<!-- existing solution by definition — omit both there and for every finding from another lens. -->
+<!-- Adoption cost exists only on a reuse finding at tier 2 — omit it at tier 1, on every extract -->
+<!-- finding, and for every non-reuse finding regardless of tier. -->

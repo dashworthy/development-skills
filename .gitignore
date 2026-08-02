@@ -1,4 +1,5 @@
 .signal/
+.guardtower/
 .DS_Store
 
 # .claude/settings.json IS committed — it carries the deny rules that freeze

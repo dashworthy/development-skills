@@ -1,0 +1,8 @@
+{
+  "name": "guardtower",
+  "description": "PR-scoped advisory review: three analysts (reuse, security, code smell) audit a pull request, an arbitrator verifies their evidence and scores it, and the findings you approve are posted back as review comments. Never modifies the code under review.",
+  "version": "0.1.0",
+  "author": { "name": "Andrew Leach", "email": "7387639+andyleach@users.noreply.github.com" },
+  "license": "MIT",
+  "keywords": ["code-review", "pull-request", "security", "reuse", "refactoring", "subagents"]
+}

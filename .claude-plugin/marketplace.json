@@ -25,6 +25,16 @@
         "name": "Andrew Leach",
         "email": "andrew@leachcreative.com"
       }
+    },
+    {
+      "name": "guardtower",
+      "description": "PR-scoped advisory review: three analysts audit a pull request, an arbitrator scores their findings, and the ones you approve are posted back as review comments.",
+      "version": "0.1.0",
+      "source": "./guardtower",
+      "author": {
+        "name": "Andrew Leach",
+        "email": "7387639+andyleach@users.noreply.github.com"
+      }
     }
   ]
 }

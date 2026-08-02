@@ -73,14 +73,18 @@ names.
 superseding solution that turns out to do something merely adjacent — not the same thing, just
 nearby — fails verification exactly like stale evidence: the finding drops.
 
-Where `existing_solution` names something with **no file to open** — a language stdlib call, a
-platform API, or a `tier: 2` package that by definition is not installed — verify the **documented
-signature** in `existing_evidence` instead, and do not drop the finding for having no file. That
-allowance is narrow and does not extend to an installed dependency: the conductor links `vendor/`,
-`node_modules/` and their equivalents into the worktree precisely so a package's source is
-openable, so a finding citing one is verified by opening it, as any repo path would be. For `tier: 2`,
-additionally require a non-empty `adoption_cost`; a tier 2 finding that omits it drops as well,
-because a dependency proposed with no stated cost is not a finding you can score.
+**Which verification you owe splits on one thing: is `existing_solution` a path in this repository?**
+
+- **A repo path** — open it in the worktree and confirm `existing_evidence` quotes what is actually
+  there, as you would any other citation.
+- **Anything else** — a language stdlib call, a platform API, an installed package, or a `tier: 2`
+  package that is not installed — verify the **documented signature** in `existing_evidence`
+  instead, and **do not drop the finding for having no file to open.** There is no dependency tree
+  in the worktree; the conductor deliberately does not link one in, so an installed package has no
+  source there and was never expected to.
+
+For `tier: 2`, additionally require a non-empty `adoption_cost`; a tier 2 finding that omits it
+drops as well, because a dependency proposed with no stated cost is not a finding you can score.
 
 **`extract` — the second half is the occurrence list.** This kind asserts that nothing already
 solves the problem and that the shape repeats often enough to earn an abstraction, so it carries no
@@ -251,8 +255,11 @@ these three lists and nothing else.
   of reading it directly with the Read tool. Guardtower deliberately has no tool whose absence
   would silently weaken a run; shelling out reintroduces exactly that dependency.
 - Scoring a finding without opening the file it cites.
-- Scoring a `reimplements`, `duplicates`, or `diverges` finding without opening its
-  `existing_solution`.
+- Scoring a `reimplements`, `duplicates`, or `diverges` finding whose `existing_solution` is a repo
+  path without opening it.
+- Dropping a finding because its `existing_solution` is an installed package you could not open —
+  there is no dependency tree in the worktree, and a documented signature is the correct evidence
+  for anything outside this repo.
 - Dropping an `extract` finding for having no `existing_solution`, or scoring one without opening
   the locations in its `also_at`.
 - Inventing scoring criteria instead of applying `scoring-rubric.md` as written.

@@ -39,34 +39,25 @@ One dispatch per run:
 That is the whole brief. Nothing hands you a prepared survey of the repository, and nothing
 should: **existence-checking is a query, not a preload.** You do not map the codebase and then
 look for duplicates in the map; you take one candidate out of the diff and go looking for that one
-thing. Two files carry most of the answer and cost one read each — the **dependency manifest**
-(`composer.json`, `package.json`, `pyproject.toml`, `go.mod`, `Gemfile`, whatever this repo uses)
-says what the project can already reach, and its **lock file** gives the resolved versions and the
-transitive packages a direct dependency already pulls in with it. Those two are what separate tier
-1 from tier 2 below. Everything past them is a search you run at the moment you have something to
-search for, never a scan you do up front.
+thing.
 
-The same discipline governs the occurrence counting **Abstraction is earned, never anticipated**
-below asks for: it starts from the diff and the code it touches. Where a finding rests on
-occurrences outside the diff — per **Multi-file findings** — get them by searching the worktree
-for that one pattern once you have it in hand, not by scanning the tree first and looking for
-patterns in what comes back. The search is per candidate pattern, and what it returns is the
-occurrence list the finding cites.
+**Work inside the read radius `schema_path` defines** — the diff, the changed files, the dependency
+manifest, and one hop from a changed line — and reach past it only by the **one targeted search per
+candidate** the radius allows. This lens is the one that most wants to keep looking, because a
+null answer always feels like it might be one more grep away from a hit. It is not: one search,
+then the answer is whatever that search returned. The manifest is what separates tier 1 from tier
+2 below; the lock file is outside the radius and you do not read it.
 
 Every path in this brief, and every path you read or search, resolves **inside `worktree`** —
 never the user's checked-out tree. `changed_paths` describes the code at `head_sha` inside that
-worktree, and so does every manifest, lock file and source file you open; nothing you touch exists
-anywhere else.
+worktree, and so does every manifest and source file you open; nothing you touch exists anywhere
+else.
 
 `skill_path` is this document and `schema_path` is the finding contract you write to — open the
 contract before you write anything, because the arbitrator drops a finding for a field you did not
-know it wanted. They are paths in the brief rather than links in this file because a dispatched
-subagent cannot resolve a relative citation from a directory it was never told it is standing in.
-
-The worktree also carries the repository's **installed dependency tree** — `vendor/`,
-`node_modules/`, whichever this ecosystem uses — linked in by the conductor, because a detached
-worktree would otherwise have none of it. An installed package's source is a file you can open and
-quote, not a black box you have to avoid asserting anything about.
+know it wanted, and because the read radius is defined there. They are paths in the brief rather
+than links in this file because a dispatched subagent cannot resolve a relative citation from a
+directory it was never told it is standing in.
 
 ## One observation, two remedies
 
@@ -97,15 +88,18 @@ is earned, never anticipated**, never before it.
 For every new file, module, class, exported function, or utility this PR introduces, answer in
 writing: **what already does this?**
 
-Answering it is a search you run yourself, once per candidate, not a lookup in something handed to
-you. For each candidate: name the capability in the words you would search for, grep the worktree
-for those words and for the obvious synonyms, check the dependency manifest and lock file for a
-package that already provides it, and consider the language's stdlib and the platform APIs this
-project already sits on.
+Answering it is a search you run yourself, **once** per candidate, not a lookup in something handed
+to you. For each candidate: name the capability in the words you would search for, run that **one**
+grep against the worktree, and read the answer off the manifest already inside your radius — not
+that grep plus its synonyms, and not a widening series of them until something turns up.
 
-A null answer — nothing already does this — is acceptable, but only together with the search that
-produced it: which paths you searched and with what, which manifest entries you checked, which
-stdlib or platform APIs you considered. **That record is load-bearing, not a footnote.** It is the
+**A null answer is a finished answer, not a cue to widen.** One search that returns nothing settles
+the candidate: the reuse branch closes and the extract branch opens under the bar below. Going back
+for a second search with different words is how a bounded question becomes an open-ended survey of
+the application, and it is the specific thing the read radius exists to stop.
+
+A null answer is acceptable, but only together with the search that produced it: what you searched
+for, and where. **That record is load-bearing, not a footnote.** It is the
 only thing separating "nothing already does this" from "I did not look", and the aggressive tier 1
 bar below rests on it entirely — an unsearched null answer makes every finding this lens did emit
 harder to trust, because it says the same lens also declined to look somewhere. **Silence is not a
@@ -121,9 +115,10 @@ unit of code in the diff, whether or not it ends in a finding. Work through the 
 write anything else.
 
 **The record has a place to go: the `unanswered` array in your output file.** Write one entry per
-candidate whose question came back empty — the candidate, what you searched and where, what you
-checked in the manifest and lock file, what stdlib or platform APIs you ruled out. It is not a
-finding, it is not scored, and the arbitrator skips it; it exists so that "load-bearing" is
+candidate whose question came back empty — the candidate, and the one search you ran for it. It is
+one line per candidate, because one search is all the radius allows and there is nothing else to
+report. It is not a finding, it is not scored, and the arbitrator skips it; it exists so that
+"load-bearing" is
 something the file can actually hold. Do not put it in your receipt, and do not name a null
 candidate in your reply: the first live run had nowhere to put this record and returned its null
 candidates by name to the conductor, breaching the context firewall to satisfy a rule this skill
@@ -178,15 +173,22 @@ actually cover the requirement is dropped exactly like any other unverified clai
 low, dropped. This closes the lens's characteristic failure: a confident "library X already does
 this" where X turns out to do something merely adjacent.
 
-**Open the source wherever there is source to open**, and quote it. The worktree carries the
-installed dependency tree (see **What you receive**), so a package already in the manifest has real
-files in it and "documented signature" is not a licence to skip reading them. The documented-
-signature form is for what genuinely cannot be opened: a language stdlib call, a platform API, or a
-`tier: 2` package that is not installed precisely because installing it is the proposal. Stated
-this way because the flat form of the rule — *never cite an `existing_solution` you have not opened*
-— was **unsatisfiable by construction** on the first live run, where the worktree had no dependency
-tree at all and 3 of this lens's 4 findings cited an installed package; a rule nothing can satisfy
-gets ignored or silently drops good findings, and both happened.
+**Which form you owe depends on one thing: is the existing solution in this repository?**
+
+- **A path in this repo** — open it and quote the source text. It is inside your read radius by
+  definition, since a repo path is exactly what a targeted search returns.
+- **Anything else** — a language stdlib call, a platform API, an installed package, or a `tier: 2`
+  package that is not installed — cite the **documented signature**. There is no dependency tree in
+  the worktree to open, and going to find one is outside the radius.
+
+That is the whole rule, and the split is *in this repo or not*, never *openable or not*. An earlier
+version split it the second way and added a carve-out saying installed packages counted as openable
+because the conductor linked `vendor/` in — which made the strong form of the rule, *never cite an
+`existing_solution` you have not opened*, **unsatisfiable by construction** on the first live run,
+where 3 of this lens's 4 findings cited an installed package and the tree was not there. A rule
+nothing can satisfy gets ignored or silently drops good findings, and both happened. The rule above
+is satisfiable for every citation you can make, because every citation is on one side of it or the
+other.
 
 An `extract` finding has no second half of this kind, because there is nothing that already does
 it — that is the branch condition. Its second half is the occurrence list: `also_at`, carrying
@@ -241,6 +243,13 @@ An `extract` finding usually spans several files. Put the clearest occurrence in
 `target_file`/`target_line` and every other in `also_at`. Expect `in_diff` to be `false` often,
 which routes the finding to the summary comment rather than an inline one; that is correct, not a
 failure. A `duplicates` finding often spans files the same way, and uses `also_at` identically.
+
+**Occurrences come from inside the read radius, found by the one search the pattern gets** — the
+same bound every other question in this lens works under. A shape that does not repeat three times
+within the diff, the changed files, and one hop from a changed line has not earned an abstraction
+*here*, whatever it does elsewhere in the application. Do not go looking for the third occurrence:
+the bar is three verified occurrences inside the radius, and a search that finds two settles the
+question at two.
 
 ## Scope is the diff
 
@@ -308,9 +317,7 @@ Write exactly this shape to `output_path`:
   "unanswered": [
     {
       "candidate": "<the new file, module, class, exported function or utility>",
-      "searched": "<the words you searched for, and the paths you searched>",
-      "manifest_checked": "<the manifest and lock file entries you looked at>",
-      "considered": "<the stdlib and platform APIs you ruled out, and why>"
+      "searched": "<the one search you ran for it: the words, and where you ran them>"
     }
   ]
 }
@@ -352,10 +359,14 @@ context firewall depends on this file being the only place a finding's content a
 ## Red flags — STOP
 
 - Writing any file other than `output_path`.
+- Reading outside the read radius: a lock file, an installed package's source, or any file more
+  than one hop from a changed line.
+- Running a second search for a candidate the first search already answered, or widening a search
+  with synonyms until it returns something.
 - Proposing a tier 2 dependency that is not well-established.
 - A tier 2 finding with no `adoption_cost`.
-- A finding whose `existing_solution` you have neither opened and read, nor — where it has no
-  source to open at all — cited a documented signature for.
+- A finding whose `existing_solution` is a repo path you have not opened and quoted, or is outside
+  this repo and carries no documented signature.
 - Answering the mandatory question with silence instead of a stated search.
 - Keeping the null-answer record out of `unanswered`, or naming a null candidate in your reply
   instead of writing it there.

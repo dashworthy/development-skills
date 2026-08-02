@@ -106,6 +106,13 @@ So guardtower never reads the PR through your working tree and never switches yo
    computed there too.
 5. Remove the worktree at the end of the run, on every exit path including a halt.
 
+> **Superseded — step 3 was deleted.** `2026-08-01-guardtower-read-radius-design.md` removes the
+> dependency-tree symlink along with the research it existed to serve. The reasoning below is kept
+> because it is the evidence the replacement is built on, not because the link still exists: the
+> new design resolves the same unsatisfiable-rule problem by splitting the evidence standard on
+> *in this repo or not* instead of on *openable or not*, so an installed package is cited by
+> documented signature and there is nothing for a linked tree to serve.
+
 **Why the dependency link is not optional.** The first live run had none, and both lenses that
 needed one lost work. The security analyst could not establish whether a column type and an
 encoder service existed at all — "all vendor-resident. I resolved this by not asserting anything

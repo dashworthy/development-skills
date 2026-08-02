@@ -171,12 +171,23 @@ if [ -s "$CONDUCTOR/references/finding-schema.md" ]; then
     && grep_flat "$CONDUCTOR/references/finding-schema.md" 'no lens can see another lens'"'"'s findings, which is why deduping them is a step that happens after all three have returned'
   check $? "finding-schema.md marks corroborated_by as the arbitrator's"
 
-  # The dependency tree's reachability, on the document all three analysts share. The conductor
-  # linking `vendor/` in is only half the fix; a lens that still believes an installed package is
-  # unreadable goes on declining to assert anything about it.
-  grep_flat "$CONDUCTOR/references/finding-schema.md" '**The dependency tree is reachable there.**' \
-    && grep_flat "$CONDUCTOR/references/finding-schema.md" 'the conductor links `vendor/`, `node_modules/`, `.venv/` and their equivalents in from the main checkout before dispatching you'
-  check $? "finding-schema.md tells analysts the dependency tree is reachable in the worktree"
+  # The read radius, on the document all three analysts share. This is the bound the whole research
+  # reduction rests on, and it lives here rather than in each lens so there is one definition to
+  # drift from rather than three. Four clauses, each separately deletable: the section itself, the
+  # one-hop limit that is the radius's actual edge, the one-search-per-candidate bound that governs
+  # everything past it, and the deliberate absence of the dependency tree. A bare "read radius"
+  # search would survive deletion of any of the three rules underneath the heading.
+  grep_flat "$CONDUCTOR/references/finding-schema.md" '## The read radius' \
+    && grep_flat "$CONDUCTOR/references/finding-schema.md" '**One hop, and the hop starts at a changed line.**' \
+    && grep_flat "$CONDUCTOR/references/finding-schema.md" 'you get **one targeted search per candidate**' \
+    && grep_flat "$CONDUCTOR/references/finding-schema.md" '**There is no installed dependency tree in the worktree.**'
+  check $? "finding-schema.md defines the read radius and its one-search bound"
+
+  # The lock file is named as excluded, specifically. Pinned apart from the radius section above
+  # because "the dependency manifest" alone reads as permission to open whatever the manifest's
+  # neighbours are, and the lock file was the single largest read two lenses used to make.
+  grep_flat "$CONDUCTOR/references/finding-schema.md" '**One file. Never the lock file.**'
+  check $? "finding-schema.md excludes the lock file from the radius"
 fi
 
 # The rubric must carry the composite formula, the gate, and the migration anchor. Each is
@@ -451,19 +462,33 @@ if [ -s "$C" ]; then
   [ -z "$miss" ]
   check $? "every analyst is told to open the contract skill_path and schema_path name (mismatched:$miss)"
 
-  # And that every analyst knows the dependency tree is reachable. This is the half of the vendor
-  # fix that lives on the reading side: the conductor can link `vendor/` in, but a lens that still
-  # believes an installed package is a black box goes on declining to assert anything about it —
-  # which is exactly what the live security analyst did, at the cost of a candidate finding.
-  DEP_REACH='The worktree also carries the repository'"'"'s **installed dependency tree**'
+  # And that every analyst is bound by the read radius. The definition living in finding-schema.md
+  # is only half of it: a lens that never points at the definition is a lens that researches the
+  # whole application exactly as before, and the definition sits in a document it was told to open
+  # for the field list rather than for this. So each lens must name the radius itself.
+  RADIUS='**Work inside the read radius `schema_path` defines**'
   miss=""
   for doc in "$PLUGIN/skills/surveying-for-reuse/SKILL.md" \
              "$PLUGIN/skills/reviewing-for-security/SKILL.md" \
              "$PLUGIN/skills/detecting-code-smell/SKILL.md"; do
-    [ -s "$doc" ] && grep_flat "$doc" "$DEP_REACH" || miss="$miss ${doc#"$PLUGIN"/}"
+    [ -s "$doc" ] && grep_flat "$doc" "$RADIUS" || miss="$miss ${doc#"$PLUGIN"/}"
   done
   [ -z "$miss" ]
-  check $? "every analyst is told the installed dependency tree is reachable in the worktree (mismatched:$miss)"
+  check $? "every analyst is bound by the read radius schema_path defines (mismatched:$miss)"
+
+  # And that each lens's Red flags list carries the radius as a stop condition. The prose statement
+  # above orients a lens at dispatch; the Red flag is what it re-reads mid-run when it is three
+  # greps deep and about to open a fourth file. Anchored to the shared opening clause, since each
+  # lens's item ends differently — smell excepts its linter config, the other two name the lock file.
+  RADIUS_FLAG='- Reading outside the read radius:'
+  miss=""
+  for doc in "$PLUGIN/skills/surveying-for-reuse/SKILL.md" \
+             "$PLUGIN/skills/reviewing-for-security/SKILL.md" \
+             "$PLUGIN/skills/detecting-code-smell/SKILL.md"; do
+    [ -s "$doc" ] && grep_flat "$doc" "$RADIUS_FLAG" || miss="$miss ${doc#"$PLUGIN"/}"
+  done
+  [ -z "$miss" ]
+  check $? "every analyst red-flags reading outside the radius (mismatched:$miss)"
 
   # The dispatch set the conductor declares exhaustive. Anchored to the sentence that enumerates
   # it, because that list is the only place a run's five dispatches are named together — and it is
@@ -587,15 +612,22 @@ if [ -s "$C" ]; then
     && grep_flat "$C" 'reading it primes every downstream judgement the conductor is supposed to make on the arbitrator'"'"'s numbers alone'
   check $? "conductor: keeps the MR title and description out of its own context"
 
-  # The dependency link. A detached worktree is a clean checkout, so every gitignored dependency
-  # tree is absent — and both lenses that needed one lost findings to it on the live run. Three
-  # clauses: the symlink loop (the mechanism), the consequence sentence (why it is not optional),
-  # and the safety argument (why read-only reuse of the main checkout is allowed at all, which is
-  # the objection a future editor will raise before deleting it).
-  grep_flat "$C" 'ln -s "$MAIN/$dep" "$WORKTREE/$dep"' \
-    && grep_flat "$C" '**Without this, two lenses silently shrink.**' \
-    && grep_flat "$C" 'Read-only reuse of the main checkout'"'"'s dependency tree is safe: nothing in a run writes through the link.'
-  check $? "conductor: links the dependency tree into the worktree, read-only"
+  # The dependency link is DELETED, and the conductor must say so rather than merely omitting it.
+  # An earlier version symlinked `vendor/`, `node_modules/` and friends into the worktree, which is
+  # what made walking an installed package's source possible at all — the single largest research
+  # licence in a run. A conductor that simply stops mentioning the link invites the next editor to
+  # "fix" its absence, because a detached worktree visibly has no dependencies and that reads as a
+  # bug. So both the prohibition and the reason it is deliberate are pinned. Two clauses: the
+  # instruction, and the sentence that tells a future editor the absence is load-bearing.
+  grep_flat "$C" '**Do not link the repository'"'"'s dependency tree in.**' \
+    && grep_flat "$C" 'that absence is now load-bearing rather than a gap to patch'
+  check $? "conductor: refuses to link the dependency tree into the worktree"
+
+  # And that no symlink loop survives anywhere in the conductor. The prose prohibition above is
+  # satisfiable with the original `for dep in vendor node_modules ...` block still sitting in the
+  # document a few lines below it, which is the drift that would quietly restore the licence.
+  ! grep -q 'ln -s "$MAIN/$dep" "$WORKTREE/$dep"' "$C"
+  check $? "conductor: carries no dependency-symlink loop"
 fi
 
 # --- the conductor's dispatched reference document -----------------------------
@@ -848,16 +880,19 @@ if [ -s "$R" ]; then
   grep_flat "$R" '**`unanswered` is a sibling of `findings`, not a finding.**'
   check $? "reuse: states that unanswered is a sibling of findings, never scored"
 
-  # The existing_solution red flag, amended. As written — "a finding whose existing_solution you
-  # have not opened and read" — it was UNSATISFIABLE BY CONSTRUCTION for an installed package on the
-  # live run, where the detached worktree contained no dependency tree at all and 3 of this lens's 4
-  # findings cited one; a compliant arbitrator would have dropped all three. Two clauses: the
-  # amended flag, and the body rule that keeps the allowance narrow now that the conductor links the
-  # dependency tree in — an installed package IS openable, and "documented signature" must not
-  # become the easy way out of reading it.
-  grep_flat "$R" 'A finding whose `existing_solution` you have neither opened and read, nor — where it has no source to open at all — cited a documented signature for.' \
-    && grep_flat "$R" '**Open the source wherever there is source to open**'
-  check $? "reuse: admits a documented signature only where nothing can be opened"
+  # The existing_solution evidence rule, split on IN THIS REPO rather than on OPENABLE. Two earlier
+  # forms both failed. "Never cite an existing_solution you have not opened" was UNSATISFIABLE BY
+  # CONSTRUCTION on the live run — the detached worktree held no dependency tree and 3 of this
+  # lens's 4 findings cited an installed package, so a compliant arbitrator drops all three. The
+  # replacement split on openable-vs-not and carved installed packages onto the openable side,
+  # which only worked while the conductor symlinked `vendor/` in; with that step deleted the carve-
+  # out is unsatisfiable again. The in-repo split has no such failure mode: every citation an
+  # analyst can make falls on one side or the other. Three clauses — the rule, the statement that
+  # the split is not the openable one (the specific regression to guard), and the red flag.
+  grep_flat "$R" '**Which form you owe depends on one thing: is the existing solution in this repository?**' \
+    && grep_flat "$R" 'the split is *in this repo or not*, never *openable or not*' \
+    && grep_flat "$R" 'A finding whose `existing_solution` is a repo path you have not opened and quoted, or is outside'
+  check $? "reuse: splits the evidence standard on in-repo, not on openable"
 fi
 
 # --- the security analyst ----------------------------------------------------
@@ -1058,15 +1093,16 @@ if [ -s "$B" ]; then
     && grep_flat "$B" 'Those are **not findings**: do not verify, score, gate, or return them.'
   check $? "arbitrator: skips the unanswered array instead of scoring it"
 
-  # The documented-signature allowance, the arbitrator's half of the vendor fix. Its verification
-  # rule says to open `existing_solution` — but a stdlib call, a platform API, and an uninstalled
-  # tier 2 package have no file to open, so the rule as written drops findings for being the kind of
-  # finding the reuse lens is explicitly allowed to make. Second clause keeps the allowance narrow:
-  # now that the conductor links the dependency tree in, an installed package IS openable and
-  # "documented signature" must not become the easy way out of reading it.
-  grep_flat "$B" 'Where `existing_solution` names something with **no file to open**' \
-    && grep_flat "$B" 'That allowance is narrow and does not extend to an installed dependency'
-  check $? "arbitrator: accepts a documented signature only where nothing can be opened"
+  # The arbitrator's half of the same split, and it must match the reuse lens's exactly — the two
+  # documents are a producer and its verifier, so a disagreement here silently drops the findings
+  # the other document told the lens to write. Its bare verification rule says to open
+  # `existing_solution`, which a stdlib call, a platform API and an installed package all have no
+  # file for now that the dependency tree is not linked in. Three clauses: the in-repo split, the
+  # explicit "do not drop for having no file", and the red flag that names the drop this reverses.
+  grep_flat "$B" '**Which verification you owe splits on one thing: is `existing_solution` a path in this repository?**' \
+    && grep_flat "$B" '**do not drop the finding for having no file to open.**' \
+    && grep_flat "$B" 'Dropping a finding because its `existing_solution` is an installed package you could not open'
+  check $? "arbitrator: splits verification on in-repo, and never drops for an unopenable package"
 fi
 
 # --- the forge poster ---------------------------------------------------------

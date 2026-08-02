@@ -31,7 +31,7 @@ flowchart TD
     F2 -->|yes| F3["Resolve the PR/MR: base sha, head sha, start sha,<br/>changed paths. Paths only — never diff contents,<br/>never the PR title or description"]
     F3 --> F4{"Any reviewable<br/>file changed?"}
     F4 -->|no| STOPNONE["Nothing to review — stop"]
-    F4 -->|yes| WT["Fetch the head ref and add a DETACHED<br/>worktree in a temp dir, with the installed<br/>dependency tree linked in read-only.<br/>Your branch is never switched"]
+    F4 -->|yes| WT["Fetch the head ref and add a DETACHED<br/>worktree in a temp dir.<br/>Your branch is never switched"]
     WT --> SNAP["Snapshot the main tree: numstat + untracked.<br/>Taken before the FIRST subagent"]
     SNAP --> AGREE["Agree the threshold — default 80 —<br/>and which lenses to run"]
     AGREE --> BRIEF
@@ -127,6 +127,20 @@ from evidence you need intact.
 and clearing 80 requires `value 80 + urgency 80` or better. Most findings will not clear it, and
 that is the intent — the rest land in `<run>/deferred.md`, a write-only backlog to mine or paste
 into an issue tracker, never posted and never read by a later run.
+
+**The analysts read a bounded radius, not your application.** Each lens may open the diff, the
+changed files, the dependency manifest, and one hop from a changed line — what a changed line
+imports, calls into, or is called by. Past that it gets one targeted search per candidate, and an
+empty search is a finished answer rather than a cue to widen. There is deliberately no installed
+dependency tree in the review worktree: an existing solution inside this repo is cited by opening
+it, and anything outside it — stdlib, platform API, a package in `vendor/` or `node_modules/` — is
+cited by documented signature.
+
+The cost is real and worth stating: duplication whose only other copy sits five hops away goes
+unreported, and a transitive package that never appears in the diff is not this review's problem.
+The benefit is that a run is bounded by the size of the change rather than the size of the
+codebase. An earlier version searched the whole worktree per candidate and walked installed package
+source, and the reconnaissance had grown into most of the run.
 
 **Inline comment anchoring is limited by the forges, not by guardtower.** GitHub and GitLab only
 accept an inline review comment on a line present in the diff. A finding whose evidence sits

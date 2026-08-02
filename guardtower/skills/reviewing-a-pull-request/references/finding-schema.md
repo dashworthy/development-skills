@@ -145,11 +145,36 @@ the user's checked-out tree. The dispatch brief hands you the worktree path alon
 sha, head sha, and changed paths; read and cite locations there, not wherever your own working
 directory happens to be.
 
-**The dependency tree is reachable there.** A detached worktree is a clean checkout, so gitignored
-dependency directories would not exist in it; the conductor links `vendor/`, `node_modules/`,
-`.venv/` and their equivalents in from the main checkout before dispatching you. So an installed
-package's source is a file you can open and quote like any other, and a finding that rests on
-library behaviour is one you can actually make. Read them; never write through them.
+## The read radius
+
+You are reviewing a change, not surveying an application. **Open anything inside the radius freely,
+and reach outside it only by a targeted search you can name the target of.**
+
+Inside the radius, no justification needed:
+
+- the `<base-sha>...<head-sha>` diff
+- any file in `changed_paths`, in full
+- the dependency manifest — `composer.json`, `package.json`, `pyproject.toml`, `go.mod`, `Gemfile`,
+  whichever this repo uses. **One file. Never the lock file.**
+- any file a changed line directly leads you to: what it imports, what it calls into, what calls
+  it. **One hop, and the hop starts at a changed line.**
+
+Outside it, you get **one targeted search per candidate** — one grep for a specific named thing you
+already have in hand. Not a scan of the tree, not a synonym expansion, not a second pass when the
+first comes back thin. **An empty search means the thing was not found**, and the finding either
+stands on what you already hold or is not written.
+
+This is a bound on reconnaissance, not on rigor. Everything the radius covers is the code this PR
+actually changed and the code immediately around it, which is where a PR review's evidence lives.
+What it excludes is the open-ended archaeology — reading a lock file to find a transitive package
+the diff never mentions, walking an installed package's source, grepping the whole tree for
+synonyms of a capability — that costs a run far more than it returns.
+
+**There is no installed dependency tree in the worktree.** A detached worktree is a clean checkout,
+so `vendor/`, `node_modules/`, `.venv/` and their equivalents are simply absent, and nothing links
+them in. That is deliberate: an installed package is cited by its **documented signature**, never by
+source you went and read. See `../../surveying-for-reuse/SKILL.md`'s **Evidence has two halves** for
+what that means when you cite one.
 
 ## You are read-only
 

@@ -62,36 +62,18 @@ branch:
    the run stops anyway, because reconciliation cannot tell a harmless worktree from a real
    violation by path alone. `mktemp -d` puts it out of reach of that test entirely, which is why
    it is the instruction rather than "pick a path under `.guardtower/`". See **Reconcile**.
-3. **Link the repository's dependency tree into it.** `git worktree add --detach` produces a
-   clean checkout, so every gitignored dependency directory is simply absent — `vendor/` for
-   Composer, `node_modules/` for npm, `.venv/` for pip, a vendored Go tree, whatever this
-   ecosystem installs into. Symlink each one that exists in the main checkout into the worktree,
-   before dispatching anything:
+3. Analysts read **inside that worktree**, and only within the **read radius** that
+   `references/finding-schema.md` defines: the diff, the changed files, the dependency manifest,
+   and one hop from a changed line. The `<base-sha>...<head-sha>` diff is computed there too.
 
-   ```sh
-   for dep in vendor node_modules .venv .bundle target Pods; do
-     [ -e "$MAIN/$dep" ] && [ ! -e "$WORKTREE/$dep" ] && ln -s "$MAIN/$dep" "$WORKTREE/$dep"
-   done
-   ```
-
-   **Without this, two lenses silently shrink.** On the first live run the security analyst
-   reported that whether a `crypted_string` column type and an encoder service existed at all was
-   "all vendor-resident. I resolved this by not asserting anything that depended on vendor
-   behavior, which cost at least one candidate finding" — a lens that quietly reviews less than it
-   was asked to. The reuse lens is worse off: its red flag *a finding whose `existing_solution` you
-   have not opened and read* is unsatisfiable by construction when the existing solution lives in
-   an installed package, and 3 of that run's 4 reuse findings cited one, so an arbitrator applying
-   the rule as written would have dropped all three.
-
-   Read-only reuse of the main checkout's dependency tree is safe: nothing in a run writes through
-   the link. Every analyst and the arbitrator are read-only by instruction, the conductor creates
-   the link rather than they, and **Reconcile** measures the main tree by path — which the link
-   points into but nothing modifies. The links live inside the temp worktree, so `git worktree
-   remove --force` takes them with it, and removing a symlink never touches what it points at.
-4. Analysts read **inside that worktree** — the diff, and every manifest, config file, source file
-   or installed package they open to answer a question. The `<base-sha>...<head-sha>` diff is
-   computed there too.
-5. Remove the worktree at the end of the run, on every exit path including a halt — see
+   **Do not link the repository's dependency tree in.** A detached worktree has no `vendor/`,
+   `node_modules/` or `.venv/`, and that absence is now load-bearing rather than a gap to patch:
+   an installed package is cited by documented signature, never by source an analyst went and read,
+   so there is nothing for a linked tree to serve. An earlier version symlinked all of them in and
+   it was the single largest research licence in the run — it is what made walking an installed
+   package's source possible at all. If you find yourself about to `ln -s` a dependency directory
+   into the worktree, that is the deleted step, not a missing one.
+4. Remove the worktree at the end of the run, on every exit path including a halt — see
    **Cleanup**.
 
 Your branch, your index, and your uncommitted work are untouched for the whole run. An analyst
@@ -379,7 +361,8 @@ Then invoke `superpowers:verification-before-completion` before reporting anythi
 - Reading the PR or MR title and description into this context — `glab mr view <n>` does it by
   default, which is why step 3 does not use it.
 - Running a preflight command anywhere but inside the repository under review.
-- Dispatching an analyst into a worktree whose dependency tree was never linked in.
+- Symlinking `vendor/`, `node_modules/` or any other dependency directory into the worktree — that
+  step was deleted, and the analysts' read radius is written on the assumption it is gone.
 - Dispatching the poster without `start_sha`, or with `start_sha` set to `base_sha`.
 - Switching the user's checked-out branch, or running `gh pr checkout`.
 - Posting anything not marked in scope during triage.

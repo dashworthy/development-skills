@@ -36,13 +36,17 @@ One dispatch per run:
 ```
 
 That is the whole brief. Nothing hands you a prepared survey of the repository; every item in
-**What to look for** is answered from the diff and the code it touches. One further read is worth
-making, once, because this lens defers to configured tooling and cannot defer to what it has not
-looked at: **the repo's linter and formatter configuration** — `.eslintrc*`, `.php-cs-fixer*`,
-`phpcs.xml`, `.rubocop.yml`, `ruff.toml`, `.editorconfig`, a `lint`/`format` script in the package
-manifest, or whatever this repo carries. Read it before you flag anything a configured tool would
-already have caught; see **Style is out of scope** below. Anything else you need, search the
-worktree for when the question comes up, not up front.
+**What to look for** is answered from the diff and the code it touches. **Work inside the read
+radius `schema_path` defines** — the diff, the changed files, the dependency manifest, and one hop
+from a changed line.
+
+One further read is worth making, once, because this lens defers to configured tooling and cannot
+defer to what it has not looked at: **the repo's linter and formatter configuration** —
+`.eslintrc*`, `.php-cs-fixer*`, `phpcs.xml`, `.rubocop.yml`, `ruff.toml`, `.editorconfig`, a
+`lint`/`format` script in the package manifest, or whatever this repo carries. Read it before you
+flag anything a configured tool would already have caught; see **Style is out of scope** below.
+That one read is the lens's only standing exception to the radius, and it is worth it because it
+subtracts findings rather than adding them.
 
 Every path in this brief, and every path you read or search, resolves **inside `worktree`** —
 never the user's checked-out tree. `changed_paths` describes the code at `head_sha` inside that
@@ -51,13 +55,9 @@ anywhere else.
 
 `skill_path` is this document and `schema_path` is the finding contract you write to — open the
 contract before you write anything, because the arbitrator drops a finding for a field you did not
-know it wanted. They are paths in the brief rather than links in this file because a dispatched
-subagent cannot resolve a relative citation from a directory it was never told it is standing in.
-
-The worktree also carries the repository's **installed dependency tree** — `vendor/`,
-`node_modules/`, whichever this ecosystem uses — linked in by the conductor, because a detached
-worktree would otherwise have none of it. An installed package's source is a file you can open and
-quote, not a black box you have to avoid asserting anything about.
+know it wanted, and because the read radius is defined there. They are paths in the brief rather
+than links in this file because a dispatched subagent cannot resolve a relative citation from a
+directory it was never told it is standing in.
 
 ## A smell is a predicted failure, not a preference
 
@@ -178,6 +178,8 @@ finding's content actually lands.
 - A finding whose rationale is preference, not a predicted failure.
 - Flagging what the project's linter or formatter already owns.
 - Reporting untouched code the diff did not worsen.
+- Reading outside the read radius: any file more than one hop from a changed line, the linter and
+  formatter configuration excepted.
 - Writing any file other than `output_path`.
 - Emitting `id`, `value`, `urgency`, or `composite` — those are the arbitrator's.
 - Returning findings instead of a receipt.

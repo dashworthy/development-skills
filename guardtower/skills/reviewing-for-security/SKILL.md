@@ -35,31 +35,29 @@ One dispatch per run:
 }
 ```
 
-That is the whole brief. Nothing hands you a prepared survey of the repository; every taxonomy
-item below is answered from the diff and the code it touches, and you read further only when a
-specific question makes you. Two of those questions recur. For **dependency surface** — a new
-package, a version bump, a widened capability — read the **dependency manifest and its lock file**
-(`composer.json` + `composer.lock`, `package.json` + the lock, `go.mod` + `go.sum`, whichever this
-repo uses); the lock file is where a transitive package arrives without ever appearing in the
-diff. For **an existing mitigation** — an auth middleware, an input-validation helper, a
-secrets-handling pattern the repo already vetted — search the worktree for it at the moment you
-have a candidate to check it against, so you can tell a genuinely new risk from code following a
-pattern already in place. Neither is a scan you run up front.
+That is the whole brief. Nothing hands you a prepared survey of the repository; every taxonomy item
+below is answered from the diff and the code it touches. **Work inside the read radius `schema_path`
+defines** — the diff, the changed files, the dependency manifest, and one hop from a changed line —
+and reach past it only by a targeted search for something you already have in hand.
+
+Two questions recur, and both are answered inside it. **Dependency surface** — a new package, a
+version bump, a widened capability — is what the diff changes, read against the manifest; the lock
+file is outside the radius, so a transitive package that never appears in the diff is not this
+review's finding. **An existing mitigation** — an auth middleware, an input-validation helper, a
+secrets-handling pattern the repo already vetted — is checked in the code the diff calls into, which
+is the one hop you already have. Where you cannot establish inside the radius that untrusted input
+actually reaches the line, you do not have a finding; see **Theoretical findings are out of scope**.
 
 Every path in this brief, and every path you read or search, resolves **inside `worktree`** —
 never the user's checked-out tree. `changed_paths` describes the code at `head_sha` inside that
-worktree, and so does every manifest, lock file and source file you open; nothing you touch exists
-anywhere else.
+worktree, and so does every manifest and source file you open; nothing you touch exists anywhere
+else.
 
 `skill_path` is this document and `schema_path` is the finding contract you write to — open the
 contract before you write anything, because the arbitrator drops a finding for a field you did not
-know it wanted. They are paths in the brief rather than links in this file because a dispatched
-subagent cannot resolve a relative citation from a directory it was never told it is standing in.
-
-The worktree also carries the repository's **installed dependency tree** — `vendor/`,
-`node_modules/`, whichever this ecosystem uses — linked in by the conductor, because a detached
-worktree would otherwise have none of it. An installed package's source is a file you can open and
-quote, not a black box you have to avoid asserting anything about.
+know it wanted, and because the read radius is defined there. They are paths in the brief rather
+than links in this file because a dispatched subagent cannot resolve a relative citation from a
+directory it was never told it is standing in.
 
 ## What counts as a finding here
 
@@ -104,9 +102,10 @@ contributes no finding; move to the next one rather than manufacturing one to fi
 - **Unsafe defaults in newly added configuration** — a new config flag, environment variable, or
   setting whose default is permissive (open CORS, debug mode enabled, verification disabled)
   rather than restrictive.
-- **Dependency changes that widen attack surface** — a new dependency, or a version bump, that
-  adds capability the code now exercises (network access, deserialization, code execution) that
-  the prior version, or no dependency, did not have.
+- **Dependency changes that widen attack surface** — a new dependency, or a version bump **visible
+  in this diff**, that adds capability the code now exercises (network access, deserialization,
+  code execution) that the prior version, or no dependency, did not have. Read against the
+  manifest, not the lock file.
 
 ## Theoretical findings are out of scope
 
@@ -171,6 +170,8 @@ finding's content actually lands.
 - A finding with no exploitation path.
 - Flagging a pattern without reading whether the surrounding code already mitigates it.
 - Reporting a dependency CVE without confirming the vulnerable code path is reachable.
+- Reading outside the read radius: a lock file, an installed package's source, or any file more
+  than one hop from a changed line.
 - Writing any file other than `output_path`.
 - Emitting `id`, `value`, `urgency`, or `composite` — those are the arbitrator's.
 - Returning findings instead of a receipt.

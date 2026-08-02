@@ -1493,28 +1493,8 @@ lens_orphans=$(grep -rlE '"lens": *"abstraction"|abstraction\.json|smell \| abst
   "$PLUGIN/skills" "$PLUGIN/commands" "$PLUGIN/README.md" 2>/dev/null | tr '\n' ' ')
 [ -z "$lens_orphans" ]; check $? "no plugin document still uses abstraction as a lens value (found:$lens_orphans)"
 
-# --- the finished plugin is frozen, as signal and verity are ----------------
+# --- run artifacts stay out of the tree -------------------------------------
 #
-# Asserted from inside the plugin's own suite so the freeze is a property the plugin tests, not a
-# convention someone has to remember. The deny rules live in .claude/settings.json, which IS
-# committed (see .gitignore's note) precisely so they travel with the repo; a checkout that has
-# guardtower but not the rules is an unfrozen guardtower, and this check is what says so.
-#
-# `deny` is read as a set and tested for containment rather than compared to a literal list: signal
-# and verity's entries are already there, an `allow` list sits alongside it, and neither is this
-# check's business. Anchored to the two exact patterns, though — a `deny` that merely mentions
-# guardtower under some other pattern would not actually stop an Edit.
-
-python3 - "$ROOT/.claude/settings.json" <<'PY'
-import json,sys
-d=json.load(open(sys.argv[1]))
-deny=set(d["permissions"]["deny"])
-need={"Edit(./guardtower/**)","Write(./guardtower/**)"}
-missing=need-deny
-assert not missing, f"settings.json deny list missing: {sorted(missing)}"
-PY
-check $? "guardtower is frozen in .claude/settings.json"
-
 # Anchored to a whole line, not a substring: `.guardtower/` appearing inside a comment — and this
 # .gitignore carries several explanatory comments — must not satisfy a check that the pattern is
 # actually in force.

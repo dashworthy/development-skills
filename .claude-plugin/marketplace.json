@@ -3,7 +3,7 @@
   "description": "dashworthy plugin marketplace",
   "owner": {
     "name": "Andrew Leach",
-    "email": "andrew@leachcreative.com"
+    "email": "7387639+andyleach@users.noreply.github.com"
   },
   "plugins": [
     {
@@ -13,7 +13,7 @@
       "source": "./signal",
       "author": {
         "name": "Andrew Leach",
-        "email": "andrew@leachcreative.com"
+        "email": "7387639+andyleach@users.noreply.github.com"
       }
     },
     {
@@ -23,7 +23,7 @@
       "source": "./verity",
       "author": {
         "name": "Andrew Leach",
-        "email": "andrew@leachcreative.com"
+        "email": "7387639+andyleach@users.noreply.github.com"
       }
     }
   ]

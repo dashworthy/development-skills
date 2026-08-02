@@ -1,19 +1,11 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
-    "allow": [
-      "Bash(git add *)",
-      "Bash(git commit *)",
-      "Bash(sh guardtower/tests/validate.sh)",
-      "Bash(echo \"EXIT=$?\")"
-    ],
     "deny": [
       "Edit(./signal/**)",
       "Edit(./verity/**)",
-      "Edit(./guardtower/**)",
       "Write(./signal/**)",
-      "Write(./verity/**)",
-      "Write(./guardtower/**)"
+      "Write(./verity/**)"
     ]
   }
 }
